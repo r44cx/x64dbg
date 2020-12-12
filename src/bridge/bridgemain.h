@@ -5,6 +5,9 @@
 
 #ifndef __cplusplus
 #include <stdbool.h>
+#define DEFAULT_PARAM(name, value) name
+#else
+#define DEFAULT_PARAM(name, value) name = value
 #endif
 
 //default structure alignments forced
@@ -120,6 +123,12 @@ BRIDGE_IMPEXP bool BridgeSettingRead(int* errorLine);
 /// </summary>
 /// <returns>25</returns>
 BRIDGE_IMPEXP int BridgeGetDbgVersion();
+
+/// <summary>
+/// Checks if the current process is elevated.
+/// </summary>
+/// <returns>true if the process is elevated, false otherwise.</returns>
+BRIDGE_IMPEXP bool BridgeIsProcessElevated();
 
 #ifdef __cplusplus
 }
@@ -310,6 +319,7 @@ typedef enum
     DBG_ANALYZE_FUNCTION,           // param1=BridgeCFGraphList* graph,  param2=duint entry
     DBG_MENU_PREPARE,               // param1=int hMenu,                 param2=unused
     DBG_GET_SYMBOL_INFO,            // param1=void* symbol,              param2=SYMBOLINFO* info
+    DBG_GET_DEBUG_ENGINE,           // param1=unused,                    param2-unused
 } DBGMSG;
 
 typedef enum
@@ -412,7 +422,9 @@ typedef enum
     size_byte = 1,
     size_word = 2,
     size_dword = 4,
-    size_qword = 8
+    size_qword = 8,
+    size_xmmword = 16,
+    size_ymmword = 32
 } MEMORY_SIZE;
 
 typedef enum
@@ -501,6 +513,19 @@ typedef enum
     sym_export,
     sym_symbol
 } SYMBOLTYPE;
+
+typedef enum
+{
+    mod_user,
+    mod_system
+} MODULEPARTY;
+
+typedef enum
+{
+    DebugEngineTitanEngine,
+    DebugEngineGleeBug,
+    DebugEngineStaticEngine,
+} DEBUG_ENGINE;
 
 //Debugger typedefs
 typedef MEMORY_SIZE VALUE_SIZE;
@@ -598,6 +623,7 @@ typedef struct SYMBOLINFO_
     SYMBOLTYPE type;
     bool freeDecorated;
     bool freeUndecorated;
+    DWORD ordinal;
 } SYMBOLINFO;
 
 typedef struct
@@ -1026,22 +1052,33 @@ BRIDGE_IMPEXP DWORD DbgGetThreadId();
 BRIDGE_IMPEXP duint DbgGetPebAddress(DWORD ProcessId);
 BRIDGE_IMPEXP duint DbgGetTebAddress(DWORD ThreadId);
 BRIDGE_IMPEXP bool DbgAnalyzeFunction(duint entry, BridgeCFGraphList* graph);
-BRIDGE_IMPEXP duint DbgEval(const char* expression, bool* success = 0);
-BRIDGE_IMPEXP void DbgMenuPrepare(int hMenu);
+BRIDGE_IMPEXP duint DbgEval(const char* expression, bool* DEFAULT_PARAM(success, nullptr));
 BRIDGE_IMPEXP void DbgGetSymbolInfo(const SYMBOLPTR* symbolptr, SYMBOLINFO* info);
+BRIDGE_IMPEXP DEBUG_ENGINE DbgGetDebugEngine();
 
 //Gui defines
-#define GUI_PLUGIN_MENU 0
-#define GUI_DISASM_MENU 1
-#define GUI_DUMP_MENU 2
-#define GUI_STACK_MENU 3
+typedef enum
+{
+    GUI_PLUGIN_MENU,
+    GUI_DISASM_MENU,
+    GUI_DUMP_MENU,
+    GUI_STACK_MENU,
+    GUI_GRAPH_MENU,
+    GUI_MEMMAP_MENU,
+    GUI_SYMMOD_MENU,
+} GUIMENUTYPE;
 
-#define GUI_DISASSEMBLY 0
-#define GUI_DUMP 1
-#define GUI_STACK 2
-#define GUI_GRAPH 3
-#define GUI_MEMMAP 4
-#define GUI_SYMMOD 5
+BRIDGE_IMPEXP void DbgMenuPrepare(GUIMENUTYPE hMenu);
+
+typedef enum
+{
+    GUI_DISASSEMBLY,
+    GUI_DUMP,
+    GUI_STACK,
+    GUI_GRAPH,
+    GUI_MEMMAP,
+    GUI_SYMMOD,
+} GUISELECTIONTYPE;
 
 #define GUI_MAX_LINE_SIZE 65536
 #define GUI_MAX_DISASSEMBLY_SIZE 2048
@@ -1092,8 +1129,8 @@ typedef enum
     GUI_MENU_ADD_ENTRY,             // param1=int hMenu,            param2=const char* title
     GUI_MENU_ADD_SEPARATOR,         // param1=int hMenu,            param2=unused
     GUI_MENU_CLEAR,                 // param1=int hMenu,            param2=unused
-    GUI_SELECTION_GET,              // param1=int hWindow,          param2=SELECTIONDATA* selection
-    GUI_SELECTION_SET,              // param1=int hWindow,          param2=const SELECTIONDATA* selection
+    GUI_SELECTION_GET,              // param1=GUISELECTIONTYPE,     param2=SELECTIONDATA* selection
+    GUI_SELECTION_SET,              // param1=GUISELECTIONTYPE,     param2=const SELECTIONDATA* selection
     GUI_GETLINE_WINDOW,             // param1=const char* title,    param2=char* text
     GUI_AUTOCOMPLETE_ADDCMD,        // param1=const char* cmd,      param2=ununsed
     GUI_AUTOCOMPLETE_DELCMD,        // param1=const char* cmd,      param2=ununsed
@@ -1115,7 +1152,7 @@ typedef enum
     GUI_ADD_QWIDGET_TAB,            // param1=QWidget*,             param2=unused
     GUI_SHOW_QWIDGET_TAB,           // param1=QWidget*,             param2=unused
     GUI_CLOSE_QWIDGET_TAB,          // param1=QWidget*,             param2=unused
-    GUI_EXECUTE_ON_GUI_THREAD,      // param1=GUICALLBACK,          param2=unused
+    GUI_EXECUTE_ON_GUI_THREAD,      // param1=GUICALLBACKEX cb,     param2=void* userdata
     GUI_UPDATE_TIME_WASTED_COUNTER, // param1=unused,               param2=unused
     GUI_SET_GLOBAL_NOTES,           // param1=const char* text,     param2=unused
     GUI_GET_GLOBAL_NOTES,           // param1=char** text,          param2=unused
@@ -1158,12 +1195,15 @@ typedef enum
     GUI_OPEN_TRACE_FILE,            // param1=const char* file name,param2=unused
     GUI_UPDATE_TRACE_BROWSER,       // param1=unused,               param2=unused
     GUI_INVALIDATE_SYMBOL_SOURCE,   // param1=duint base,           param2=unused
+    GUI_GET_CURRENT_GRAPH,          // param1=BridgeCFGraphList*,   param2=unused
+    GUI_SHOW_REF,                   // param1=unused,               param2=unused
 } GUIMSG;
 
 //GUI Typedefs
 struct _TYPEDESCRIPTOR;
 
 typedef void (*GUICALLBACK)();
+typedef void (*GUICALLBACKEX)(void*);
 typedef bool (*GUISCRIPTEXECUTE)(const char* text);
 typedef void (*GUISCRIPTCOMPLETER)(const char* text, char** entries, int* entryCount);
 typedef bool (*TYPETOSTRING)(const struct _TYPEDESCRIPTOR* type, char* dest, size_t* destCount); //don't change destCount for final failure
@@ -1273,8 +1313,8 @@ BRIDGE_IMPEXP int GuiMenuAddEntry(int hMenu, const char* title);
 BRIDGE_IMPEXP void GuiMenuAddSeparator(int hMenu);
 BRIDGE_IMPEXP void GuiMenuClear(int hMenu);
 BRIDGE_IMPEXP void GuiMenuRemove(int hEntryMenu);
-BRIDGE_IMPEXP bool GuiSelectionGet(int hWindow, SELECTIONDATA* selection);
-BRIDGE_IMPEXP bool GuiSelectionSet(int hWindow, const SELECTIONDATA* selection);
+BRIDGE_IMPEXP bool GuiSelectionGet(GUISELECTIONTYPE hWindow, SELECTIONDATA* selection);
+BRIDGE_IMPEXP bool GuiSelectionSet(GUISELECTIONTYPE hWindow, const SELECTIONDATA* selection);
 BRIDGE_IMPEXP bool GuiGetLineWindow(const char* title, char* text);
 BRIDGE_IMPEXP void GuiAutoCompleteAddCmd(const char* cmd);
 BRIDGE_IMPEXP void GuiAutoCompleteDelCmd(const char* cmd);
@@ -1335,6 +1375,9 @@ BRIDGE_IMPEXP void GuiReferenceAddCommand(const char* title, const char* command
 BRIDGE_IMPEXP void GuiUpdateTraceBrowser();
 BRIDGE_IMPEXP void GuiOpenTraceFile(const char* fileName);
 BRIDGE_IMPEXP void GuiInvalidateSymbolSource(duint base);
+BRIDGE_IMPEXP void GuiExecuteOnGuiThreadEx(GUICALLBACKEX cbGuiThread, void* userdata);
+BRIDGE_IMPEXP void GuiGetCurrentGraph(BridgeCFGraphList* graphList);
+BRIDGE_IMPEXP void GuiShowReferences();
 
 #ifdef __cplusplus
 }

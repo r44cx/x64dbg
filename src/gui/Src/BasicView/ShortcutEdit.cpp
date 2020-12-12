@@ -1,8 +1,10 @@
 #include "ShortcutEdit.h"
+#include <QStyle>
 
 ShortcutEdit::ShortcutEdit(QWidget* parent) : QLineEdit(parent)
 {
     keyInt = -1;
+    mError = true;
 }
 
 const QKeySequence ShortcutEdit::getKeysequence() const
@@ -13,12 +15,17 @@ const QKeySequence ShortcutEdit::getKeysequence() const
     return QKeySequence(keyInt);
 }
 
+bool ShortcutEdit::error() const
+{
+    return mError;
+}
+
 void ShortcutEdit::setErrorState(bool error)
 {
-    if(error)
-        setStyleSheet("color: #DD0000");
-    else
-        setStyleSheet("color: #222222");
+    this->mError = error;
+
+    this->style()->unpolish(this);
+    this->style()->polish(this);
 }
 
 void ShortcutEdit::keyPressEvent(QKeyEvent* event)
@@ -62,10 +69,6 @@ void ShortcutEdit::keyPressEvent(QKeyEvent* event)
             return;
         }
     }
-
-    // replace Backtab with Shift+Tab
-    if((keyInt & Qt::Key_Backtab) == Qt::Key_Backtab)
-        keyInt = (keyInt & ~Qt::Key_Backtab) | Qt::SHIFT | Qt::Key_Tab;
 
     // display key combination
     setText(QKeySequence(keyInt).toString(QKeySequence::NativeText));

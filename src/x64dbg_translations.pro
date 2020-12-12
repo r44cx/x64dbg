@@ -67,7 +67,7 @@ SOURCES += \
     gui/Src/Gui/XrefBrowseDialog.cpp \
     gui/Src/Gui/YaraRuleSelectionDialog.cpp \
     gui/Src/main.cpp \
-    gui/Src/Disassembler/capstone_gui.cpp \
+    gui/Src/Disassembler/ZydisTokenizer.cpp \
     gui/Src/Disassembler/QBeaEngine.cpp \
     dbg/_dbgfunctions.cpp \
     dbg/_exports.cpp \
@@ -217,7 +217,7 @@ SOURCES += \
     gui/Src/Gui/LocalVarsView.cpp \
     gui/Src/Gui/MessagesBreakpoints.cpp \
     gui/Src/Gui/AboutDialog.cpp \
-    gui/Src/Gui/BreakpointMenu.cpp \
+    gui/Src/Gui/CommonActions.cpp \
     gui/Src/Utils/SymbolAutoCompleteModel.cpp \
     gui/Src/Tracer/TraceBrowser.cpp \
     gui/Src/Tracer/TraceFileReader.cpp \
@@ -225,7 +225,11 @@ SOURCES += \
     gui/Src/Gui/MultiItemsSelectWindow.cpp \
     gui/Src/BasicView/AbstractStdTable.cpp \
     gui/Src/Gui/ZehSymbolTable.cpp \
-    gui/Src/BasicView/StdSearchListView.cpp
+    gui/Src/BasicView/StdSearchListView.cpp \
+    gui/Src/Gui/CPURegistersView.cpp \
+    gui/Src/Tracer/TraceRegisters.cpp \
+    gui/Src/Tracer/TraceWidget.cpp \
+    gui/Src/Gui/SystemBreakpointScriptDialog.cpp
 
 HEADERS += \
     gui/Src/Exports.h \
@@ -293,7 +297,7 @@ HEADERS += \
     gui/Src/Gui/WordEditDialog.h \
     gui/Src/Gui/XrefBrowseDialog.h \
     gui/Src/Gui/YaraRuleSelectionDialog.h \
-    gui/Src/Disassembler/capstone_gui.h \
+    gui/Src/Disassembler/ZydisTokenizer.h \
     gui/Src/Disassembler/QBeaEngine.h \
     gui/Src/Gui/StructWidget.h \
     dbg/_dbgfunctions.h \
@@ -453,7 +457,7 @@ HEADERS += \
     gui/Src/Gui/LocalVarsView.h \
     gui/Src/Gui/MessagesBreakpoints.h \
     gui/Src/Gui/AboutDialog.h \
-    gui/Src/Gui/BreakpointMenu.h \
+    gui/Src/Gui/CommonActions.h \
     gui/Src/Utils/SymbolAutoCompleteModel.h \
     gui/Src/Tracer/TraceBrowser.h \
     gui/Src/Tracer/TraceFileReader.h \
@@ -462,7 +466,11 @@ HEADERS += \
     gui/Src/Gui/MultiItemsSelectWindow.h \
     gui/Src/BasicView/AbstractStdTable.h \
     gui/Src/Gui/ZehSymbolTable.h \
-    gui/Src/BasicView/StdSearchListView.h
+    gui/Src/BasicView/StdSearchListView.h \
+    gui/Src/Gui/CPURegistersView.h \
+    gui/Src/Tracer/TraceRegisters.h \
+    gui/Src/Tracer/TraceWidget.h \
+    gui/Src/Gui/SystemBreakpointScriptDialog.h
 
 FORMS += \
     gui/Src/Gui/AppearanceDialog.ui \
@@ -501,7 +509,9 @@ FORMS += \
     gui/Src/Gui/SimpleTraceDialog.ui \
     gui/Src/Gui/StructWidget.ui \
     gui/Src/Gui/MessagesBreakpoints.ui \
-    gui/Src/Gui/AboutDialog.ui
+    gui/Src/Gui/AboutDialog.ui \
+    gui/Src/Tracer/TraceWidget.ui \
+    gui/Src/Gui/SystemBreakpointScriptDialog.ui
 
 TRANSLATIONS += \
     gui/Translations/x64dbg.ts

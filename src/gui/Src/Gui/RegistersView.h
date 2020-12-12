@@ -29,10 +29,12 @@ class RegistersView : public QScrollArea
 
 public:
     // all possible register ids
-    enum REGISTER_NAME
+    enum REGISTER_NAME : int
     {
         CAX, CCX, CDX, CBX, CDI, CBP, CSI, CSP,
+#ifdef _WIN64
         R8, R9, R10, R11, R12, R13, R14, R15,
+#endif //_WIN64
         CIP,
         EFLAGS, CF, PF, AF, ZF, SF, TF, IF, DF, OF,
         GS, FS, ES, DS, CS, SS,
@@ -40,6 +42,7 @@ public:
         DR0, DR1, DR2, DR3, DR6, DR7,
         // x87 stuff
         x87r0, x87r1, x87r2, x87r3, x87r4, x87r5, x87r6, x87r7,
+        x87st0, x87st1, x87st2, x87st3, x87st4, x87st5, x87st6, x87st7,
         x87TagWord, x87ControlWord, x87StatusWord,
         // x87 Tag Word fields
         x87TW_0, x87TW_1, x87TW_2, x87TW_3, x87TW_4, x87TW_5,
@@ -58,28 +61,15 @@ public:
         // MMX and XMM
         MM0, MM1, MM2, MM3, MM4, MM5, MM6, MM7,
         XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, XMM6, XMM7,
+#ifdef _WIN64
         XMM8, XMM9, XMM10, XMM11, XMM12, XMM13, XMM14, XMM15,
+#endif //_WIN64
         // YMM
-        YMM0, YMM1, YMM2, YMM3, YMM4, YMM5, YMM6, YMM7, YMM8,
-        YMM9, YMM10, YMM11, YMM12, YMM13, YMM14, YMM15,
-
+        YMM0, YMM1, YMM2, YMM3, YMM4, YMM5, YMM6, YMM7,
+#ifdef _WIN64
+        YMM8, YMM9, YMM10, YMM11, YMM12, YMM13, YMM14, YMM15,
+#endif //_WIN64
         UNKNOWN
-    };
-
-    enum SIMD_REG_DISP_MODE
-    {
-        SIMD_REG_DISP_HEX,
-        SIMD_REG_DISP_FLOAT,
-        SIMD_REG_DISP_DOUBLE,
-        SIMD_REG_DISP_WORD_SIGNED,
-        SIMD_REG_DISP_DWORD_SIGNED,
-        SIMD_REG_DISP_QWORD_SIGNED,
-        SIMD_REG_DISP_WORD_UNSIGNED,
-        SIMD_REG_DISP_DWORD_UNSIGNED,
-        SIMD_REG_DISP_QWORD_UNSIGNED,
-        SIMD_REG_DISP_WORD_HEX,
-        SIMD_REG_DISP_DWORD_HEX,
-        SIMD_REG_DISP_QWORD_HEX
     };
 
     // contains viewport position of register
@@ -106,8 +96,38 @@ public:
         }
     };
 
+    // tracks position of a register relative to other registers
+    struct Register_Relative_Position
+    {
+        REGISTER_NAME left;
+        REGISTER_NAME right;
+        REGISTER_NAME up;
+        REGISTER_NAME down;
 
-    explicit RegistersView(CPUWidget* parent);
+        Register_Relative_Position(REGISTER_NAME l, REGISTER_NAME r)
+        {
+            left = l;
+            right = r;
+            up = left;
+            down = right;
+        }
+        Register_Relative_Position(REGISTER_NAME l, REGISTER_NAME r, REGISTER_NAME u, REGISTER_NAME d)
+        {
+            left = l;
+            right = r;
+            up = u;
+            down = d;
+        }
+        Register_Relative_Position()
+        {
+            left = UNKNOWN;
+            right = UNKNOWN;
+            up = UNKNOWN;
+            down = UNKNOWN;
+        }
+    };
+
+    explicit RegistersView(QWidget* parent);
     ~RegistersView();
 
     QSize sizeHint() const;
@@ -117,11 +137,9 @@ public:
     int getEstimateHeight();
 
 public slots:
-    void refreshShortcutsSlot();
-    void updateRegistersSlot();
-    void displayCustomContextMenuSlot(QPoint pos);
-    void setRegister(REGISTER_NAME reg, duint value);
-    void debugStateChangedSlot(DBGSTATE state);
+    virtual void refreshShortcutsSlot();
+    virtual void displayCustomContextMenuSlot(QPoint pos);
+    virtual void debugStateChangedSlot(DBGSTATE state);
     void reload();
     void ShowFPU(bool set_showfpu);
     void onChangeFPUViewAction();
@@ -140,53 +158,15 @@ protected:
 
     // use-in-class-only methods
     void drawRegister(QPainter* p, REGISTER_NAME reg, char* value);
-    void setRegisters(REGDUMP* reg);
     char* registerValue(const REGDUMP* regd, const REGISTER_NAME reg);
     bool identifyRegister(const int y, const int x, REGISTER_NAME* clickedReg);
     QString helpRegister(REGISTER_NAME reg);
-    void CreateDumpNMenu(QMenu* dumpMenu);
 
-    void displayEditDialog();
+    void ensureRegisterVisible(REGISTER_NAME reg);
 
 protected slots:
-    void fontsUpdatedSlot();
-    void onIncrementAction();
-    void onDecrementAction();
-    void onIncrementx87StackAction();
-    void onDecrementx87StackAction();
-    void onZeroAction();
-    void onSetToOneAction();
-    void onModifyAction();
-    void onToggleValueAction();
-    void onUndoAction();
-    void onCopyToClipboardAction();
-    void onCopySymbolToClipboardAction();
-    void onCopyAllAction();
-    void onFollowInDisassembly();
-    void onFollowInDump();
-    void onFollowInDumpN();
-    void onFollowInStack();
-    void onFollowInMemoryMap();
-    void onIncrementPtrSize();
-    void onDecrementPtrSize();
-    void onPushAction();
-    void onPopAction();
-    void onHighlightSlot();
     void InitMappings();
-    // switch SIMD display modes
-    void onSIMDHex();
-    void onSIMDFloat();
-    void onSIMDDouble();
-    void onSIMDSWord();
-    void onSIMDUWord();
-    void onSIMDHWord();
-    void onSIMDSDWord();
-    void onSIMDUDWord();
-    void onSIMDHDWord();
-    void onSIMDSQWord();
-    void onSIMDUQWord();
-    void onSIMDHQWord();
-    void onClose();
+    void fontsUpdatedSlot();
     QString getRegisterLabel(REGISTER_NAME);
     int CompareRegisters(const REGISTER_NAME reg_name, REGDUMP* regdump1, REGDUMP* regdump2);
     SIZE_T GetSizeRegister(const REGISTER_NAME reg_name);
@@ -199,14 +179,15 @@ protected slots:
     //unsigned int GetControlWordRCValueFromString(const char* string);
     QString GetMxCsrRCStateString(unsigned short);
     //unsigned int GetMxCsrRCValueFromString(const char* string);
-    void ModifyFields(const QString & title, STRING_VALUE_TABLE_t* table, SIZE_T size);
     //unsigned int GetStatusWordTOPValueFromString(const char* string);
     QString GetStatusWordTOPStateString(unsigned short state);
+    void setRegisters(REGDUMP* reg);
     void appendRegister(QString & text, REGISTER_NAME reg, const char* name64, const char* name32);
-    void disasmSelectionChangedSlot(dsint va);
-private:
+
+    void onCopyAllAction();
+protected:
+    bool isActive;
     QPushButton* mChangeViewButton;
-    CPUWidget* mParent;
     bool mShowFpu;
     int mVScrollOffset;
     int mRowsNeeded;
@@ -247,50 +228,15 @@ private:
     QMap<REGISTER_NAME, QString> mRegisterMapping;
     // contains viewport positions
     QMap<REGISTER_NAME, Register_Position> mRegisterPlaces;
+    // contains names of closest registers in view
+    QMap<REGISTER_NAME, Register_Relative_Position> mRegisterRelativePlaces;
     // contains a dump of the current register values
     REGDUMP wRegDumpStruct;
     REGDUMP wCipRegDumpStruct;
     // font measures (TODO: create a class that calculates all thos values)
     unsigned int mRowHeight, mCharWidth;
     // SIMD registers display mode
-    SIMD_REG_DISP_MODE wSIMDRegDispMode;
-    // context menu actions
-    QMenu* mSwitchSIMDDispMode;
-    QAction* mFollowInDump;
-    QAction* wCM_Increment;
-    QAction* wCM_Decrement;
-    QAction* wCM_IncrementPtrSize;
-    QAction* wCM_DecrementPtrSize;
-    QAction* wCM_Push;
-    QAction* wCM_Pop;
-    QAction* wCM_Zero;
-    QAction* wCM_SetToOne;
-    QAction* wCM_Modify;
-    QAction* wCM_ToggleValue;
-    QAction* wCM_Undo;
-    QAction* wCM_CopyToClipboard;
-    QAction* wCM_CopySymbolToClipboard;
-    QAction* wCM_CopyAll;
-    QAction* wCM_FollowInDisassembly;
-    QAction* wCM_FollowInDump;
-    QAction* wCM_FollowInStack;
-    QAction* wCM_FollowInMemoryMap;
-    QAction* wCM_Incrementx87Stack;
-    QAction* wCM_Decrementx87Stack;
-    QAction* wCM_ChangeFPUView;
-    QAction* wCM_Highlight;
-    QAction* SIMDHex;
-    QAction* SIMDFloat;
-    QAction* SIMDDouble;
-    QAction* SIMDSWord;
-    QAction* SIMDUWord;
-    QAction* SIMDHWord;
-    QAction* SIMDSDWord;
-    QAction* SIMDUDWord;
-    QAction* SIMDHDWord;
-    QAction* SIMDSQWord;
-    QAction* SIMDUQWord;
-    QAction* SIMDHQWord;
+    char mFpuMode; //0 = order by ST(X), 1 = order by x87rX, 2 = MMX registers
     dsint mCip;
     std::vector<std::pair<const char*, uint8_t>> mHighlightRegs;
 };

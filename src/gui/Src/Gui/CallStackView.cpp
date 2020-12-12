@@ -28,11 +28,11 @@ void CallStackView::setupContextMenu()
     });
     QIcon icon = DIcon(ArchValue("processor32.png", "processor64.png"));
     mMenuBuilder->addAction(makeAction(icon, tr("Follow &Address"), SLOT(followAddress())));
-    mMenuBuilder->addAction(makeAction(icon, tr("Follow &To"), SLOT(followTo())), [this](QMenu*)
+    mMenuBuilder->addAction(makeAction(icon, tr("Follow &To"), SLOT(followTo())));
+    QAction* mFollowFrom = mMenuBuilder->addAction(makeAction(icon, tr("Follow &From"), SLOT(followFrom())), [this](QMenu*)
     {
         return !getCellContent(getInitialSelection(), 2).isEmpty();
     });
-    QAction* mFollowFrom = mMenuBuilder->addAction(makeAction(icon, tr("Follow &From"), SLOT(followFrom())));
     mFollowFrom->setShortcutContext(Qt::WidgetShortcut);
     mFollowFrom->setShortcut(QKeySequence("enter"));
     connect(this, SIGNAL(enterPressedSignal()), this, SLOT(followFrom()));
@@ -84,14 +84,14 @@ void CallStackView::updateCallStack()
         int party = DbgFunctions()->ModGetParty(callstack.entries[i].to);
         switch(party)
         {
-        case 0:
+        case mod_user:
             setCellContent(i, 5, tr("User"));
             break;
-        case 1:
+        case mod_system:
             setCellContent(i, 5, tr("System"));
             break;
         default:
-            setCellContent(i, 5, QString("%1").arg(party));
+            setCellContent(i, 5, QString::number(party));
             break;
         }
     }
@@ -111,19 +111,19 @@ void CallStackView::contextMenuSlot(const QPoint pos)
 void CallStackView::followAddress()
 {
     QString addrText = getCellContent(getInitialSelection(), 0);
-    DbgCmdExecDirect(QString("sdump " + addrText).toUtf8().constData());
+    DbgCmdExecDirect(QString("sdump " + addrText));
 }
 
 void CallStackView::followTo()
 {
     QString addrText = getCellContent(getInitialSelection(), 1);
-    DbgCmdExecDirect(QString("disasm " + addrText).toUtf8().constData());
+    DbgCmdExecDirect(QString("disasm " + addrText));
 }
 
 void CallStackView::followFrom()
 {
     QString addrText = getCellContent(getInitialSelection(), 2);
-    DbgCmdExecDirect(QString("disasm " + addrText).toUtf8().constData());
+    DbgCmdExecDirect(QString("disasm " + addrText));
 }
 
 void CallStackView::showSuspectedCallStack()

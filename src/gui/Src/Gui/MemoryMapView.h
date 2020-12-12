@@ -22,7 +22,6 @@ public slots:
     void followDumpSlot();
     void followDisassemblerSlot();
     void doubleClickedSlot();
-    void yaraSlot();
     void memoryExecuteSingleshootToggleSlot();
     void memoryAllocateSlot();
     void ExecCommand();
@@ -30,7 +29,6 @@ public slots:
     void switchView();
     void pageMemoryRights();
     void refreshMap();
-    void entropy();
     void findPatternSlot();
     void dumpMemory();
     void commentSlot();
@@ -38,6 +36,7 @@ public slots:
     void gotoOriginSlot();
     void gotoExpressionSlot();
     void addVirtualModSlot();
+    void findReferencesSlot();
     void selectionGetSlot(SELECTIONDATA* selection);
     void disassembleAtSlot(dsint va, dsint cip);
 
@@ -49,7 +48,6 @@ private:
 
     QAction* mFollowDump;
     QAction* mFollowDisassembly;
-    QAction* mYara;
     QAction* mSwitchView;
     QAction* mPageMemoryRights;
     QAction* mDumpMemory;
@@ -69,7 +67,6 @@ private:
     QAction* mMemoryExecuteRestore;
     QAction* mMemoryRemove;
     QAction* mMemoryExecuteSingleshootToggle;
-    QAction* mEntropy;
     QAction* mFindPattern;
     QMenu* mGotoMenu;
     QAction* mGotoOrigin;
@@ -78,6 +75,8 @@ private:
     QAction* mMemoryFree;
     QAction* mAddVirtualMod;
     QAction* mComment;
+    QAction* mReferences;
+    QMenu* mPluginMenu;
 
     duint mCipBase;
 };

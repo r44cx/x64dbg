@@ -24,7 +24,9 @@ WatchExpr::WatchExpr(const char* name, const char* expression, WATCHVARTYPE type
 duint WatchExpr::getIntValue()
 {
     duint origVal = currValue;
-    if(varType == WATCHVARTYPE::TYPE_UINT || varType == WATCHVARTYPE::TYPE_INT || varType == WATCHVARTYPE::TYPE_ASCII || varType == WATCHVARTYPE::TYPE_UNICODE)
+    if(varType == WATCHVARTYPE::TYPE_UINT || varType == WATCHVARTYPE::TYPE_INT ||
+            varType == WATCHVARTYPE::TYPE_FLOAT ||
+            varType == WATCHVARTYPE::TYPE_ASCII || varType == WATCHVARTYPE::TYPE_UNICODE)
     {
         duint val;
         bool ok = expr.Calculate(val, varType == WATCHVARTYPE::TYPE_INT, false);
@@ -237,6 +239,21 @@ WATCHVARTYPE WatchGetType(unsigned int id)
         return obj->second->getType();
     else
         return WATCHVARTYPE::TYPE_INVALID;
+}
+
+void WatchSetTypeUnlocked(unsigned int id, WATCHVARTYPE type)
+{
+    auto obj = watchexpr.find(id);
+    if(obj != watchexpr.end())
+        obj->second->setType(type);
+}
+
+void WatchSetType(unsigned int id, WATCHVARTYPE type)
+{
+    EXCLUSIVE_ACQUIRE(LockWatch);
+    WatchSetTypeUnlocked(id, type);
+    EXCLUSIVE_RELEASE();
+    GuiUpdateWatchViewAsync();
 }
 
 unsigned int WatchGetWindow(unsigned int id)

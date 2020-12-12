@@ -37,12 +37,22 @@ namespace Exprfunc
 
     duint modsystem(duint addr)
     {
-        return ModGetParty(addr) == 1;
+        SHARED_ACQUIRE(LockModules);
+        auto info = ModInfoFromAddr(addr);
+        if(info)
+            return info->party == mod_system;
+        else
+            return 0;
     }
 
     duint moduser(duint addr)
     {
-        return ModGetParty(addr) == 0;
+        SHARED_ACQUIRE(LockModules);
+        auto info = ModInfoFromAddr(addr);
+        if(info)
+            return info->party == mod_user;
+        else
+            return 0;
     }
 
     duint modrva(duint addr)
@@ -61,7 +71,19 @@ namespace Exprfunc
             return 0;
     }
 
-    static duint selstart(int hWindow)
+    duint modisexport(duint addr)
+    {
+        SHARED_ACQUIRE(LockModules);
+        auto info = ModInfoFromAddr(addr);
+        if(info)
+        {
+            duint rva = addr - info->base;
+            return info->findExport(rva) ? 1 : 0;
+        }
+        return 0;
+    }
+
+    static duint selstart(GUISELECTIONTYPE hWindow)
     {
         SELECTIONDATA selection;
         GuiSelectionGet(hWindow, &selection);
@@ -272,6 +294,12 @@ namespace Exprfunc
         return readStart + disasmback(disasmData, 0, sizeof(disasmData), addr - readStart, 1);
     }
 
+    duint disiscallsystem(duint addr)
+    {
+        duint dest = disbranchdest(addr);
+        return dest && (modsystem(dest) || modsystem(disbranchdest(dest)));
+    }
+
     duint trenabled(duint addr)
     {
         return TraceRecord.getTraceRecordType(addr) != TraceRecordManager::TraceRecordNone;
@@ -410,5 +438,37 @@ namespace Exprfunc
         //This is a function to sets CIP without calling DebugUpdateGui. This is a workaround for "bpgoto".
         SetContextDataEx(hActiveThread, UE_CIP, cip);
         return cip;
+    }
+
+    duint exfirstchance()
+    {
+        return getLastExceptionInfo().dwFirstChance;
+    }
+
+    duint exaddr()
+    {
+        return (duint)getLastExceptionInfo().ExceptionRecord.ExceptionAddress;
+    }
+
+    duint excode()
+    {
+        return getLastExceptionInfo().ExceptionRecord.ExceptionCode;
+    }
+
+    duint exflags()
+    {
+        return getLastExceptionInfo().ExceptionRecord.ExceptionFlags;
+    }
+
+    duint exinfocount()
+    {
+        return getLastExceptionInfo().ExceptionRecord.NumberParameters;
+    }
+
+    duint exinfo(duint index)
+    {
+        if(index >= EXCEPTION_MAXIMUM_PARAMETERS)
+            return 0;
+        return getLastExceptionInfo().ExceptionRecord.ExceptionInformation[index];
     }
 }

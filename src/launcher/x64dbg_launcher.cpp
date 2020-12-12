@@ -2,9 +2,13 @@
 #include <stdio.h>
 #include <windows.h>
 #include <string>
+#include <queue>
 #include <shlwapi.h>
 #include <objbase.h>
+#pragma warning(push)
+#pragma warning(disable:4091)
 #include <shlobj.h>
+#pragma warning(pop)
 #include <atlcomcli.h>
 
 #include "../exe/resource.h"
@@ -295,6 +299,16 @@ static TCHAR sz32Dir[MAX_PATH] = TEXT("");
 static TCHAR sz64Path[MAX_PATH] = TEXT("");
 static TCHAR sz64Dir[MAX_PATH] = TEXT("");
 
+static void restartInstall()
+{
+    OSVERSIONINFO osvi;
+    memset(&osvi, 0, sizeof(osvi));
+    osvi.dwOSVersionInfoSize = sizeof(osvi);
+    GetVersionEx(&osvi);
+    auto operation = osvi.dwMajorVersion >= 6 ? TEXT("runas") : TEXT("open");
+    ShellExecute(nullptr, operation, szModulePath, TEXT("::install"), szCurrentDir, SW_SHOWNORMAL);
+}
+
 static BOOL CALLBACK DlgLauncher(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch(uMsg)
@@ -337,12 +351,7 @@ static BOOL CALLBACK DlgLauncher(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM 
         case IDC_BUTTONINSTALL:
         {
             EndDialog(hwndDlg, 0);
-            OSVERSIONINFO osvi;
-            memset(&osvi, 0, sizeof(osvi));
-            osvi.dwOSVersionInfoSize = sizeof(osvi);
-            GetVersionEx(&osvi);
-            auto operation = osvi.dwMajorVersion >= 6 ? TEXT("runas") : TEXT("open");
-            ShellExecute(nullptr, operation, szModulePath, TEXT("::install"), szCurrentDir, SW_SHOWNORMAL);
+            restartInstall();
         }
         return TRUE;
         }
@@ -378,6 +387,39 @@ const wchar_t* SHELLEXT_EXE_KEY = L"exefile\\shell\\Debug with x64dbg\\Command";
 const wchar_t* SHELLEXT_ICON_EXE_KEY = L"exefile\\shell\\Debug with x64dbg";
 const wchar_t* SHELLEXT_DLL_KEY = L"dllfile\\shell\\Debug with x64dbg\\Command";
 const wchar_t* SHELLEXT_ICON_DLL_KEY = L"dllfile\\shell\\Debug with x64dbg";
+
+static void deleteZoneData(const std::wstring & rootDir)
+{
+    std::wstring tempPath;
+    std::queue<std::wstring> queue;
+    queue.push(rootDir);
+    while(!queue.empty())
+    {
+        auto dir = queue.front();
+        queue.pop();
+        WIN32_FIND_DATAW foundData;
+        HANDLE hSearch = FindFirstFileW((dir + L"\\*").c_str(), &foundData);
+        if(hSearch == INVALID_HANDLE_VALUE)
+        {
+            continue;
+        }
+        do
+        {
+            if((foundData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == FILE_ATTRIBUTE_DIRECTORY)
+            {
+                if(wcscmp(foundData.cFileName, L".") != 0 && wcscmp(foundData.cFileName, L"..") != 0)
+                    queue.push(dir + L"\\" + foundData.cFileName);
+            }
+            else
+            {
+                tempPath = dir + L"\\" + foundData.cFileName + L":Zone.Identifier";
+                DeleteFileW(tempPath.c_str());
+            }
+        }
+        while(FindNextFileW(hSearch, &foundData));
+        FindClose(hSearch);
+    }
+}
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
@@ -455,10 +497,42 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
             MessageBox(nullptr, LoadResString(IDS_INVDPATH64), LoadResString(IDS_ERROR), MB_ICONERROR);
     };
 
+    unsigned long pid = 0, id2 = 0;
+    auto loadPid = [&](const wchar_t* cmdLine)
+    {
+        if(isWoW64())
+        {
+            auto hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+            if(hProcess)
+            {
+                BOOL bWow64Process = FALSE;
+                if(IsWow64Process(hProcess, &bWow64Process) && bWow64Process)
+                    load32(cmdLine);
+                else
+                    load64(cmdLine);
+                CloseHandle(hProcess);
+            }
+            else
+                load64(cmdLine);
+        }
+        else
+            load32(cmdLine);
+    };
+
+    OutputDebugStringW(L"[x96dbg] Command line:");
+    OutputDebugStringW(GetCommandLineW());
+
     //Handle command line
     auto argc = 0;
     auto argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    unsigned long pid = 0;
+
+    // If x64dbg is not found, perform installation
+    if(bDoneSomething)
+    {
+        restartInstall();
+        return 0;
+    }
+
     if(argc <= 1) //no arguments -> launcher dialog
     {
         if(!FileExists(sz32Path) && BrowseFileOpen(nullptr, TEXT("x32dbg.exe\0x32dbg.exe\0\0"), nullptr, sz32Path, MAX_PATH, szCurrentDir))
@@ -473,7 +547,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         }
         DialogBox(GetModuleHandle(0), MAKEINTRESOURCE(IDD_DIALOGLAUNCHER), 0, DlgLauncher);
     }
-    else if(argc >= 2 && !wcscmp(argv[1], L"::install")) //set configuration
+    else if(argc == 2 && !wcscmp(argv[1], L"::install")) //set configuration
     {
         if(!FileExists(sz32Path) && BrowseFileOpen(nullptr, TEXT("x32dbg.exe\0x32dbg.exe\0\0"), nullptr, sz32Path, MAX_PATH, szCurrentDir))
         {
@@ -485,6 +559,8 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
             WritePrivateProfileString(TEXT("Launcher"), TEXT("x64dbg"), sz64Path, szIniPath);
             bDoneSomething = true;
         }
+        deleteZoneData(szCurrentDir);
+        deleteZoneData(szCurrentDir + std::wstring(L"\\..\\pluginsdk"));
         if(MessageBox(nullptr, LoadResString(IDS_ASKSHELLEXT), LoadResString(IDS_QUESTION), MB_YESNO | MB_ICONQUESTION) == IDYES)
         {
             TCHAR szLauncherCommand[MAX_PATH] = TEXT("");
@@ -514,31 +590,23 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         if(bDoneSomething)
             MessageBox(nullptr, LoadResString(IDS_NEWCFGWRITTEN), LoadResString(IDS_DONE), MB_ICONINFORMATION);
     }
-    else if(argc >= 3 && !wcscmp(argv[1], L"-p") && parseId(argv[2], pid)) //-p PID
+    else if(argc == 3 && !wcscmp(argv[1], L"-p") && parseId(argv[2], pid)) //-p PID
     {
         wchar_t cmdLine[32] = L"";
-        unsigned long tid;
-        if(argc >= 5 && !wcscmp(argv[3], L"-tid") && parseId(argv[4], tid)) //-p PID -tid TID
-            wsprintfW(cmdLine, L"-p %u -tid %u", pid, tid);
-        else
-            wsprintfW(cmdLine, L"-p %u", pid);
-        if(isWoW64())
-        {
-            auto hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-            if(hProcess)
-            {
-                BOOL bWow64Process = FALSE;
-                if(IsWow64Process(hProcess, &bWow64Process) && bWow64Process)
-                    load32(cmdLine);
-                else
-                    load64(cmdLine);
-                CloseHandle(hProcess);
-            }
-            else
-                load64(cmdLine);
-        }
-        else
-            load32(cmdLine);
+        wsprintfW(cmdLine, L"-p %u", pid);
+        loadPid(cmdLine);
+    }
+    else if(argc == 5 && !wcscmp(argv[1], L"-p") && !wcscmp(argv[3], L"-tid") && parseId(argv[2], pid) && parseId(argv[4], id2)) //-p PID -tid TID
+    {
+        wchar_t cmdLine[32] = L"";
+        wsprintfW(cmdLine, L"-p %u -tid %u", pid, id2);
+        loadPid(cmdLine);
+    }
+    else if(argc == 5 && !wcscmp(argv[1], L"-p") && !wcscmp(argv[3], L"-e") && parseId(argv[2], pid) && parseId(argv[4], id2)) //-p PID -e EVENT
+    {
+        wchar_t cmdLine[32] = L"";
+        wsprintfW(cmdLine, L"-a %u -e %u", pid, id2);
+        loadPid(cmdLine);
     }
     else if(argc >= 2) //one or more arguments -> execute debugger
     {
@@ -554,7 +622,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         }
 
         TCHAR szPath[MAX_PATH] = TEXT("");
-        if(PathIsRelative(argv[1])) //resolve the full path if a relative path is specified
+        if(PathIsRelative(argv[1])) //resolve the full path if a relative path is specified (TODO: honor the PATH environment variable)
         {
             GetCurrentDirectory(_countof(szPath), szPath);
             PathAppend(szPath, argv[1]);
@@ -576,11 +644,11 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
                 escaped.clear();
                 auto len = wcslen(argv[i]);
-                for(size_t i = 0; i < len; i++)
+                for(size_t j = 0; j < len; j++)
                 {
-                    if(escaped[i] == L'\"')
-                        escaped.push_back(escaped[i]);
-                    escaped.push_back(escaped[i]);
+                    if(argv[i][j] == L'\"')
+                        escaped.push_back(L'\"');
+                    escaped.push_back(argv[i][j]);
                 }
 
                 cmdLine += escaped;

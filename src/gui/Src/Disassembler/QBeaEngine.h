@@ -3,7 +3,7 @@
 
 #include <QString>
 #include <vector>
-#include "capstone_gui.h"
+#include "ZydisTokenizer.h"
 
 class EncodeMap;
 class CodeFoldingHelper;
@@ -33,8 +33,9 @@ struct Instruction_t
     int length;
     duint branchDestination;
     BranchType branchType;
-    CapstoneTokenizer::InstructionToken tokens;
+    ZydisTokenizer::InstructionToken tokens;
     std::vector<std::pair<const char*, uint8_t>> regsReferenced;
+    uint8_t vectorElementType[4];
 };
 
 class QBeaEngine
@@ -42,10 +43,10 @@ class QBeaEngine
 public:
     explicit QBeaEngine(int maxModuleSize);
     ~QBeaEngine();
-    ulong DisassembleBack(byte_t* data, duint base, duint size, duint ip, int n);
-    ulong DisassembleNext(byte_t* data, duint base, duint size, duint ip, int n);
-    Instruction_t DisassembleAt(byte_t* data, duint size, duint origBase, duint origInstRVA, bool datainstr = true);
-    Instruction_t DecodeDataAt(byte_t* data, duint size, duint origBase, duint origInstRVA, ENCODETYPE type);
+    ulong DisassembleBack(const byte_t* data, duint base, duint size, duint ip, int n);
+    ulong DisassembleNext(const byte_t* data, duint base, duint size, duint ip, int n);
+    Instruction_t DisassembleAt(const byte_t* data, duint size, duint origBase, duint origInstRVA, bool datainstr = true);
+    Instruction_t DecodeDataAt(const byte_t* data, duint size, duint origBase, duint origInstRVA, ENCODETYPE type);
     void setCodeFoldingManager(CodeFoldingHelper* CodeFoldingManager);
     void UpdateConfig();
 
@@ -63,7 +64,7 @@ private:
     };
 
     void UpdateDataInstructionMap();
-    CapstoneTokenizer _tokenizer;
+    ZydisTokenizer _tokenizer;
     QHash<ENCODETYPE, DataInstructionInfo> dataInstMap;
     bool _bLongDataInst;
     EncodeMap* mEncodeMap;

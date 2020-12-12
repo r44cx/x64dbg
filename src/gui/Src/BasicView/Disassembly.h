@@ -2,17 +2,16 @@
 #define DISASSEMBLY_H
 
 #include "AbstractTableView.h"
-#include "DisassemblyPopup.h"
+#include "QBeaEngine.h"
 
 class CodeFoldingHelper;
-class QBeaEngine;
 class MemoryPage;
 
 class Disassembly : public AbstractTableView
 {
     Q_OBJECT
 public:
-    explicit Disassembly(QWidget* parent = 0);
+    Disassembly(QWidget* parent, bool isMain);
     ~Disassembly() override;
 
     // Configuration
@@ -26,30 +25,12 @@ public:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
-    void leaveEvent(QEvent* event) override;
 
     // Keyboard Management
     void keyPressEvent(QKeyEvent* event) override;
 
     // ScrollBar Management
     dsint sliderMovedHook(int type, dsint value, dsint delta) override;
-
-    // Jumps Graphic
-    int paintJumpsGraphic(QPainter* painter, int x, int y, dsint addr, bool isjmp);
-
-    // Function Graphic
-
-    enum Function_t
-    {
-        Function_none,
-        Function_single,
-        Function_start,
-        Function_middle,
-        Function_loop_entry,
-        Function_end
-    };
-
-    int paintFunctionGraphic(QPainter* painter, int x, int y, Function_t funcType, bool loop);
 
     // Instructions Management
     dsint getPreviousInstructionRVA(dsint rva, duint count);
@@ -61,15 +42,15 @@ public:
     // Selection Management
     void expandSelectionUpTo(dsint to);
     void setSingleSelection(dsint index);
-    dsint getInitialSelection();
-    dsint getSelectionSize();
-    dsint getSelectionStart();
-    dsint getSelectionEnd();
+    dsint getInitialSelection() const;
+    dsint getSelectionSize() const;
+    dsint getSelectionStart() const;
+    dsint getSelectionEnd() const;
     void selectNext(bool expand);
     void selectPrevious(bool expand);
     bool isSelected(dsint base, dsint offset);
-    bool isSelected(QList<Instruction_t>* buffer, int index);
-    duint getSelectedVa();
+    bool isSelected(QList<Instruction_t>* buffer, int index) const;
+    duint getSelectedVa() const;
 
     // Update/Reload/Refresh/Repaint
     void prepareData() override;
@@ -79,46 +60,46 @@ public:
     duint rvaToVa(dsint rva) const;
     void disassembleClear();
     const duint getBase() const;
-    duint getSize();
-    duint getTableOffsetRva();
+    duint getSize() const;
+    duint getTableOffsetRva() const;
 
     // history management
     void historyClear();
     void historyPrevious();
     void historyNext();
-    bool historyHasPrevious();
-    bool historyHasNext();
+    bool historyHasPrevious() const;
+    bool historyHasNext() const;
 
     //disassemble
-    void disassembleAt(dsint parVA, dsint parCIP, bool history, dsint newTableOffset);
+    void gotoAddress(duint addr);
+    void disassembleAt(dsint parVA, bool history, dsint newTableOffset);
 
     QList<Instruction_t>* instructionsBuffer(); // ugly
     const dsint baseAddress() const;
-    const dsint currentEIP() const;
 
     QString getAddrText(dsint cur_addr, char label[MAX_LABEL_SIZE], bool getLabel = true);
     void prepareDataCount(const QList<dsint> & wRVAs, QList<Instruction_t>* instBuffer);
     void prepareDataRange(dsint startRva, dsint endRva, const std::function<bool(int, const Instruction_t &)> & disassembled);
-    RichTextPainter::List getRichBytes(const Instruction_t & instr) const;
+    RichTextPainter::List getRichBytes(const Instruction_t & instr, bool isSelected) const;
 
     //misc
     void setCodeFoldingManager(CodeFoldingHelper* CodeFoldingManager);
+    duint getDisassemblyPopupAddress(int mousex, int mousey) override;
     void unfold(dsint rva);
-    void ShowDisassemblyPopup(duint addr, int x, int y);
-    bool hightlightToken(const CapstoneTokenizer::SingleToken & token);
-    bool isHighlightMode();
+    bool hightlightToken(const ZydisTokenizer::SingleToken & token);
+    bool isHighlightMode() const;
 
 signals:
     void selectionChanged(dsint parVA);
     void selectionExpanded();
-    void disassembledAt(dsint parVA, dsint parCIP, bool history, dsint newTableOffset);
     void updateWindowTitle(QString title);
 
 public slots:
-    void disassembleAt(dsint parVA, dsint parCIP);
+    void disassembleAtSlot(dsint parVA, dsint parCIP);
     void debugStateChangedSlot(DBGSTATE state);
     void selectionChangedSlot(dsint parVA);
     void tokenizerConfigUpdatedSlot();
+    void updateConfigSlot();
 
 private:
     enum GuiState
@@ -159,7 +140,7 @@ private:
 
     GuiState mGuiState;
 
-    dsint mCipRva;
+    duint mCipVa = 0;
 
     QList<Instruction_t> mInstBuffer;
 
@@ -167,16 +148,30 @@ private:
     {
         dsint va;
         dsint tableOffset;
-        QString windowTitle;
     };
 
     QList<HistoryData> mVaHistory;
     int mCurrentVa;
 
 protected:
+    // Jumps Graphic
+    int paintJumpsGraphic(QPainter* painter, int x, int y, dsint addr, bool isjmp);
+
+    // Function Graphic
+
+    enum Function_t
+    {
+        Function_none,
+        Function_single,
+        Function_start,
+        Function_middle,
+        Function_loop_entry,
+        Function_end
+    };
+
+    int paintFunctionGraphic(QPainter* painter, int x, int y, Function_t funcType, bool loop);
     // Configuration
     QColor mInstructionHighlightColor;
-    QColor mSelectionColor;
     QColor mDisassemblyRelocationUnderlineColor;
 
     QColor mCipBackgroundColor;
@@ -207,14 +202,6 @@ protected:
     QColor mModifiedBytesBackgroundColor;
     QColor mRestoredBytesColor;
     QColor mRestoredBytesBackgroundColor;
-    QColor mByte00Color;
-    QColor mByte00BackgroundColor;
-    QColor mByte7FColor;
-    QColor mByte7FBackgroundColor;
-    QColor mByteFFColor;
-    QColor mByteFFBackgroundColor;
-    QColor mByteIsPrintColor;
-    QColor mByteIsPrintBackgroundColor;
 
     QColor mAutoCommentColor;
     QColor mAutoCommentBackgroundColor;
@@ -243,16 +230,15 @@ protected:
     duint mRvaDisplayBase;
     dsint mRvaDisplayPageBase;
     bool mHighlightingMode;
-    bool mPopupEnabled;
     MemoryPage* mMemPage;
     QBeaEngine* mDisasm;
     bool mShowMnemonicBrief;
     XREF_INFO mXrefInfo;
     CodeFoldingHelper* mCodeFoldingManager;
-    DisassemblyPopup mDisassemblyPopup;
-    CapstoneTokenizer::SingleToken mHighlightToken;
+    ZydisTokenizer::SingleToken mHighlightToken;
     bool mPermanentHighlightingMode;
     bool mNoCurrentModuleText;
+    bool mIsMain = false;
 };
 
 #endif // DISASSEMBLY_H

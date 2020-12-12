@@ -13,7 +13,7 @@ ReferenceView::ReferenceView(bool sourceView, QWidget* parent) : StdSearchListVi
     mSearchStartCol = 1;
 
     // Widget container for progress
-    QWidget* progressWidget = new QWidget();
+    QWidget* progressWidget = new QWidget(this);
 
     // Create the layout for the progress bars
     QHBoxLayout* layoutProgress = new QHBoxLayout();
@@ -96,14 +96,10 @@ void ReferenceView::setupContextMenu()
 
 void ReferenceView::connectBridge()
 {
-    connect(Bridge::getBridge(), SIGNAL(referenceAddColumnAt(int, QString)), this, SLOT(addColumnAtRef(int, QString)));
-    connect(Bridge::getBridge(), SIGNAL(referenceSetRowCount(dsint)), this, SLOT(setRowCount(dsint)));
-    connect(Bridge::getBridge(), SIGNAL(referenceSetCellContent(int, int, QString)), this, SLOT(setCellContent(int, int, QString)));
-    connect(Bridge::getBridge(), SIGNAL(referenceReloadData()), this, SLOT(reloadData()));
+    connect(Bridge::getBridge(), SIGNAL(referenceReloadData()), this, SLOT(reloadDataSlot()));
     connect(Bridge::getBridge(), SIGNAL(referenceSetSingleSelection(int, bool)), this, SLOT(setSingleSelection(int, bool)));
     connect(Bridge::getBridge(), SIGNAL(referenceSetProgress(int)), this, SLOT(referenceSetProgressSlot(int)));
     connect(Bridge::getBridge(), SIGNAL(referenceSetCurrentTaskProgress(int, QString)), this, SLOT(referenceSetCurrentTaskProgressSlot(int, QString)));
-    connect(Bridge::getBridge(), SIGNAL(referenceSetSearchStartCol(int)), this, SLOT(setSearchStartCol(int)));
     connect(Bridge::getBridge(), SIGNAL(referenceAddCommand(QString, QString)), this, SLOT(addCommand(QString, QString)));
     connect(stdSearchList(), SIGNAL(selectionChangedSignal(int)), this, SLOT(searchSelectionChanged(int)));
     connect(stdList(), SIGNAL(selectionChangedSignal(int)), this, SLOT(searchSelectionChanged(int)));
@@ -111,17 +107,23 @@ void ReferenceView::connectBridge()
 
 void ReferenceView::disconnectBridge()
 {
-    disconnect(Bridge::getBridge(), SIGNAL(referenceAddColumnAt(int, QString)), this, SLOT(addColumnAtRef(int, QString)));
-    disconnect(Bridge::getBridge(), SIGNAL(referenceSetRowCount(dsint)), this, SLOT(setRowCount(dsint)));
-    disconnect(Bridge::getBridge(), SIGNAL(referenceSetCellContent(int, int, QString)), this, SLOT(setCellContent(int, int, QString)));
-    disconnect(Bridge::getBridge(), SIGNAL(referenceReloadData()), this, SLOT(reloadData()));
+    disconnect(Bridge::getBridge(), SIGNAL(referenceReloadData()), this, SLOT(reloadDataSlot()));
     disconnect(Bridge::getBridge(), SIGNAL(referenceSetSingleSelection(int, bool)), this, SLOT(setSingleSelection(int, bool)));
-    disconnect(Bridge::getBridge(), SIGNAL(referenceSetProgress(int)), mSearchTotalProgress, SLOT(setValue(int)));
+    disconnect(Bridge::getBridge(), SIGNAL(referenceSetProgress(int)), this, SLOT(referenceSetProgressSlot(int)));
     disconnect(Bridge::getBridge(), SIGNAL(referenceSetCurrentTaskProgress(int, QString)), this, SLOT(referenceSetCurrentTaskProgressSlot(int, QString)));
-    disconnect(Bridge::getBridge(), SIGNAL(referenceSetSearchStartCol(int)), this, SLOT(setSearchStartCol(int)));
     disconnect(Bridge::getBridge(), SIGNAL(referenceAddCommand(QString, QString)), this, SLOT(addCommand(QString, QString)));
     disconnect(stdSearchList(), SIGNAL(selectionChangedSignal(int)), this, SLOT(searchSelectionChanged(int)));
     disconnect(stdList(), SIGNAL(selectionChangedSignal(int)), this, SLOT(searchSelectionChanged(int)));
+}
+
+int ReferenceView::progress() const
+{
+    return mSearchTotalProgress->value();
+}
+
+int ReferenceView::currentTaskProgress() const
+{
+    return mSearchCurrentTaskProgress->value();
 }
 
 void ReferenceView::refreshShortcutsSlot()
@@ -135,6 +137,7 @@ void ReferenceView::referenceSetProgressSlot(int progress)
     mSearchTotalProgress->setValue(progress);
     mSearchTotalProgress->setAlignment(Qt::AlignCenter);
     mSearchTotalProgress->setFormat(tr("Total Progress %1%").arg(QString::number(progress)));
+    mCountTotalLabel->setText(QString("%1").arg(stdList()->getRowCount()));
 }
 
 void ReferenceView::referenceSetCurrentTaskProgressSlot(int progress, QString taskTitle)
@@ -150,6 +153,16 @@ void ReferenceView::searchSelectionChanged(int index)
     DbgValToString("$__dump_refindex", index);
 }
 
+void ReferenceView::reloadDataSlot()
+{
+    if(mUpdateCountLabel)
+    {
+        mUpdateCountLabel = true;
+        mCountTotalLabel->setText(QString("%1").arg(stdList()->getRowCount()));
+    }
+    reloadData();
+}
+
 void ReferenceView::addColumnAtRef(int width, QString title)
 {
     int charwidth = getCharWidth();
@@ -157,7 +170,7 @@ void ReferenceView::addColumnAtRef(int width, QString title)
         width = charwidth * width + 8;
     else
         width = 0;
-    mSearchBox->setText("");
+    clearFilter();
     if(title.toLower() == "&data&")
         title = "Data";
     StdSearchListView::addColumnAt(width, title, true);
@@ -167,13 +180,13 @@ void ReferenceView::setRowCount(dsint count)
 {
     if(!stdList()->getRowCount() && count) //from zero to N rows
         searchSelectionChanged(0);
-    emit mCountTotalLabel->setText(QString("%1").arg(count));
+    mUpdateCountLabel = true;
     StdSearchListView::setRowCount(count);
 }
 
 void ReferenceView::setSingleSelection(int index, bool scroll)
 {
-    mSearchBox->setText("");
+    clearFilter();
     stdList()->setSingleSelection(index);
     if(scroll) //TODO: better scrolling
         stdList()->setTableOffset(index);
@@ -234,18 +247,18 @@ void ReferenceView::referenceContextMenu(QMenu* wMenu)
 
 void ReferenceView::followAddress()
 {
-    DbgCmdExecDirect(QString("disasm " + mCurList->getCellContent(mCurList->getInitialSelection(), 0)).toUtf8().constData());
+    DbgCmdExecDirect(QString("disasm " + mCurList->getCellContent(mCurList->getInitialSelection(), 0)));
 }
 
 void ReferenceView::followDumpAddress()
 {
-    DbgCmdExecDirect(QString("dump " + mCurList->getCellContent(mCurList->getInitialSelection(), 0)).toUtf8().constData());
+    DbgCmdExecDirect(QString("dump " + mCurList->getCellContent(mCurList->getInitialSelection(), 0)));
 }
 
 void ReferenceView::followApiAddress()
 {
     dsint apiValue = apiAddressFromString(mCurList->getCellContent(mCurList->getInitialSelection(), 1));
-    DbgCmdExecDirect(QString("disasm " + ToPtrString(apiValue)).toUtf8().constData());
+    DbgCmdExecDirect(QString("disasm " + ToPtrString(apiValue)));
 }
 
 void ReferenceView::followGenericAddress()
@@ -293,7 +306,7 @@ void ReferenceView::setBreakpointAt(int row, BPSetAction action)
         wCmd = "bp " + ToPtrString(wVA);
     }
 
-    DbgCmdExecDirect(wCmd.toUtf8().constData());
+    DbgCmdExecDirect(wCmd);
 }
 
 void ReferenceView::toggleBreakpoint()

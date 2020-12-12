@@ -399,7 +399,7 @@ bool Zydis::IsBranchType(std::underlying_type_t<BranchType> bt) const
 ZydisMnemonic Zydis::GetId() const
 {
     if(!Success())
-        DebugBreak();
+        return ZYDIS_MNEMONIC_INVALID;
     return mInstr.mnemonic;
 }
 
@@ -468,6 +468,14 @@ static bool isSafe64NopRegOp(const ZydisDecodedOperand & op)
     case ZYDIS_REGISTER_ESP:
     case ZYDIS_REGISTER_ESI:
     case ZYDIS_REGISTER_EDI:
+    case ZYDIS_REGISTER_R8D:
+    case ZYDIS_REGISTER_R9D:
+    case ZYDIS_REGISTER_R10D:
+    case ZYDIS_REGISTER_R11D:
+    case ZYDIS_REGISTER_R12D:
+    case ZYDIS_REGISTER_R13D:
+    case ZYDIS_REGISTER_R14D:
+    case ZYDIS_REGISTER_R15D:
         return false; //32 bit register modifications clear the high part of the 64 bit register
     default:
         return true; //all other registers are safe
@@ -552,7 +560,7 @@ bool Zydis::IsNop() const
     case ZYDIS_MNEMONIC_JRCXZ:
     case ZYDIS_MNEMONIC_JS:
     case ZYDIS_MNEMONIC_JZ:
-        // jmp 0
+        // jmp $0
         return ops[0].type == ZYDIS_OPERAND_TYPE_IMMEDIATE
                && ops[0].imm.value.u == this->Address() + this->Size();
     case ZYDIS_MNEMONIC_SHL:
@@ -607,7 +615,9 @@ bool Zydis::IsUnusual() const
            || id == ZYDIS_MNEMONIC_RDRAND
            || id == ZYDIS_MNEMONIC_RDSEED
            || id == ZYDIS_MNEMONIC_UD1
-           || id == ZYDIS_MNEMONIC_UD2;
+           || id == ZYDIS_MNEMONIC_UD2
+           || id == ZYDIS_MNEMONIC_VMCALL
+           || id == ZYDIS_MNEMONIC_VMFUNC;
 }
 
 std::string Zydis::Mnemonic() const
@@ -683,6 +693,24 @@ size_t Zydis::ResolveOpValue(int opindex, const std::function<size_t(ZydisRegist
     return dest;
 }
 
+Zydis::VectorElementType Zydis::getVectorElementType(int opindex) const
+{
+    if(!Success())
+        return Zydis::VETDefault;
+    if(opindex >= mInstr.operandCount)
+        return Zydis::VETDefault;
+    const auto & op = mInstr.operands[opindex];
+    switch(op.elementType)
+    {
+    case ZYDIS_ELEMENT_TYPE_FLOAT32:
+        return Zydis::VETFloat32;
+    case ZYDIS_ELEMENT_TYPE_FLOAT64:
+        return Zydis::VETFloat64;
+    default:
+        return Zydis::VETDefault;
+    }
+}
+
 bool Zydis::IsBranchGoingToExecute(size_t cflags, size_t ccx) const
 {
     if(!Success())
@@ -740,11 +768,11 @@ bool Zydis::IsBranchGoingToExecute(ZydisMnemonic id, size_t cflags, size_t ccx)
     case ZYDIS_MNEMONIC_JS: //jump short if sign
         return bSF;
     case ZYDIS_MNEMONIC_LOOP: //decrement count; jump short if ecx!=0
-        return ccx != 0;
+        return ccx != 1;
     case ZYDIS_MNEMONIC_LOOPE: //decrement count; jump short if ecx!=0 and zf=1
-        return ccx != 0 && bZF;
+        return ccx != 1 && bZF;
     case ZYDIS_MNEMONIC_LOOPNE: //decrement count; jump short if ecx!=0 and zf=0
-        return ccx != 0 && !bZF;
+        return ccx != 1 && !bZF;
     default:
         return false;
     }
@@ -865,10 +893,22 @@ void Zydis::RegInfo(uint8_t regs[ZYDIS_REGISTER_MAX_VALUE + 1]) const
         {
         case ZYDIS_OPERAND_TYPE_REGISTER:
         {
-            if(op.action & ZYDIS_OPERAND_ACTION_MASK_READ)
+            switch(op.action)
+            {
+            case ZYDIS_OPERAND_ACTION_READ:
+            case ZYDIS_OPERAND_ACTION_CONDREAD:
                 regs[op.reg.value] |= RAIRead;
-            if(op.action & ZYDIS_OPERAND_ACTION_MASK_WRITE)
+                break;
+            case ZYDIS_OPERAND_ACTION_WRITE:
+            case ZYDIS_OPERAND_ACTION_CONDWRITE:
                 regs[op.reg.value] |= RAIWrite;
+                break;
+            case ZYDIS_OPERAND_ACTION_READWRITE:
+            case ZYDIS_OPERAND_ACTION_READ_CONDWRITE:
+            case ZYDIS_OPERAND_ACTION_CONDREAD_WRITE:
+                regs[op.reg.value] |= RAIRead | RAIWrite;
+                break;
+            }
             regs[op.reg.value] |= op.visibility == ZYDIS_OPERAND_VISIBILITY_HIDDEN ?
                                   RAIImplicit : RAIExplicit;
         }

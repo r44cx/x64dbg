@@ -26,7 +26,6 @@
 #include "expressionfunctions.h"
 #include "formatfunctions.h"
 #include "stringformat.h"
-#include "yara/yara.h"
 #include "dbghelp_safe.h"
 
 static MESSAGE_STACK* gMsgStack = 0;
@@ -240,6 +239,7 @@ static void registercommands()
     dbgcmdnew("alloc", cbDebugAlloc, true); //allocate memory
     dbgcmdnew("free", cbDebugFree, true); //free memory
     dbgcmdnew("Fill,memset", cbDebugMemset, true); //memset
+    dbgcmdnew("memcpy", cbDebugMemcpy, true); //memcpy
     dbgcmdnew("getpagerights,getrightspage", cbDebugGetPageRights, true);
     dbgcmdnew("setpagerights,setrightspage", cbDebugSetPageRights, true);
     dbgcmdnew("savedata", cbInstrSavedata, true); //save data to disk
@@ -258,7 +258,9 @@ static void registercommands()
     dbgcmdnew("SetWatchdog", cbSetWatchdog, true); // Setup watchdog
     dbgcmdnew("SetWatchExpression", cbSetWatchExpression, true); // Set watch expression
     dbgcmdnew("SetWatchName", cbSetWatchName, true); // Set watch name
+    dbgcmdnew("SetWatchType", cbSetWatchType, true); // Set watch type
     dbgcmdnew("CheckWatchdog", cbCheckWatchdog, true); // Watchdog
+
 
     //variables
     dbgcmdnew("varnew,var", cbInstrVar, false); //make a variable arg1:name,[arg2:value]
@@ -275,8 +277,6 @@ static void registercommands()
     dbgcmdnew("refstr,strref", cbInstrRefStr, true); //find string references
     dbgcmdnew("reffunctionpointer", cbInstrRefFuncionPointer, true); //find function pointers
     dbgcmdnew("modcallfind", cbInstrModCallFind, true); //find intermodular calls
-    dbgcmdnew("yara", cbInstrYara, true); //yara test command
-    dbgcmdnew("yaramod", cbInstrYaramod, true); //yara rule on module
     dbgcmdnew("setmaxfindresult,findsetmaxresult", cbInstrSetMaxFindResult, false); //set the maximum number of occurences found
     dbgcmdnew("guidfind,findguid", cbInstrGUIDFind, true); //find GUID references TODO: undocumented
 
@@ -327,6 +327,8 @@ static void registercommands()
 
     dbgcmdnew("virtualmod", cbInstrVirtualmod, true); //virtual module
     dbgcmdnew("symdownload,downloadsym", cbDebugDownloadSymbol, true); //download symbols
+    dbgcmdnew("symload,loadsym", cbDebugLoadSymbol, true); //load symbols
+    dbgcmdnew("symunload,unloadsym", cbDebugUnloadSymbol, true); //unload symbols
     dbgcmdnew("imageinfo,modimageinfo", cbInstrImageinfo, true); //print module image information
     dbgcmdnew("GetRelocSize,grs", cbInstrGetRelocSize, true); //get relocation table size
     dbgcmdnew("exhandlers", cbInstrExhandlers, true); //enumerate exception handlers
@@ -381,6 +383,7 @@ static void registercommands()
     dbgcmdnew("msgyn", cbScriptMsgyn, false);
     dbgcmdnew("log", cbInstrLog, false); //log command with superawesome hax
     dbgcmdnew("scriptdll,dllscript", cbScriptDll, false); //execute a script DLL
+    dbgcmdnew("scriptcmd", cbScriptCmd, false); // execute a script command TODO: undocumented
 
     //gui
     dbgcmdnew("disasm,dis,d", cbDebugDisasm, true); //doDisasm
@@ -401,6 +404,8 @@ static void registercommands()
     dbgcmdnew("AddFavouriteCommand", cbInstrAddFavCmd, false); //add favourite command
     dbgcmdnew("AddFavouriteToolShortcut,SetFavouriteToolShortcut", cbInstrSetFavToolShortcut, false); //set favourite tool shortcut
     dbgcmdnew("FoldDisassembly", cbInstrFoldDisassembly, true); //fold disassembly segment
+    dbgcmdnew("guiupdatetitle", cbDebugUpdateTitle, true); // set relevant disassembly title
+    dbgcmdnew("showref", cbShowReferences, false); // show references window
 
     //misc
     dbgcmdnew("chd", cbInstrChd, false); //Change directory
@@ -440,6 +445,9 @@ static void registercommands()
     dbgcmdnew("printstack,logstack", cbInstrPrintStack, true); //print the call stack
     dbgcmdnew("flushlog", cbInstrFlushlog, false); //flush the log
     dbgcmdnew("AnimateWait", cbInstrAnimateWait, true); //Wait for the debuggee to pause.
+    dbgcmdnew("dbdecompress", cbInstrDbdecompress, false); //Decompress a database.
+    dbgcmdnew("DebugFlags", cbInstrDebugFlags, false); //Set ntdll LdrpDebugFlags
+    dbgcmdnew("LabelRuntimeFunctions", cbInstrLabelRuntimeFunctions, true); //Label exception directory entries
 };
 
 bool cbCommandProvider(char* cmd, int maxlen)
@@ -566,8 +574,23 @@ static bool DbgScriptDllExec(const char* dll)
     return true;
 }
 
-static DWORD WINAPI loadDbThread(LPVOID)
+static DWORD WINAPI loadDbThread(LPVOID hEvent)
 {
+    {
+        // Take exclusive ownership over the modules to prevent a race condition with cbCreateProcess
+        EXCLUSIVE_ACQUIRE(LockModules);
+
+        // Signal the startup thread that we have the lock
+        SetEvent(hEvent);
+
+        // Load syscall indices
+        dputs(QT_TRANSLATE_NOOP("DBG", "Retrieving syscall indices..."));
+        if(SyscallInit())
+            dputs(QT_TRANSLATE_NOOP("DBG", "Syscall indices loaded!"));
+        else
+            dputs(QT_TRANSLATE_NOOP("DBG", "Failed to load syscall indices..."));
+    }
+
     // Load error codes
     if(ErrorCodeInit(StringUtils::sprintf("%s\\..\\errordb.txt", szProgramDir)))
         dputs(QT_TRANSLATE_NOOP("DBG", "Error codes database loaded!"));
@@ -613,21 +636,64 @@ static WString escape(WString cmdline)
     return cmdline;
 }
 
+#include <delayimp.h>
+
+// https://devblogs.microsoft.com/oldnewthing/20170126-00/?p=95265
+static FARPROC WINAPI delayHook(unsigned dliNotify, PDelayLoadInfo pdli)
+{
+    if(dliNotify == dliNotePreLoadLibrary && _stricmp(pdli->szDll, "TitanEngine.dll") == 0)
+    {
+        String fullPath = szProgramDir;
+        fullPath += '\\';
+
+        switch(DbgGetDebugEngine())
+        {
+        case DebugEngineGleeBug:
+            fullPath += "GleeBug\\TitanEngine.dll";
+            break;
+        case DebugEngineStaticEngine:
+            fullPath += "StaticEngine\\TitanEngine.dll";
+            break;
+        case DebugEngineTitanEngine:
+        default:
+            return 0;
+        }
+
+        auto hModule = LoadLibraryW(StringUtils::Utf8ToUtf16(fullPath).c_str());
+        if(hModule)
+        {
+            dprintf(QT_TRANSLATE_NOOP("DBG", "Successfully loaded %s!\n"), fullPath.c_str());
+        }
+        else
+        {
+            dprintf(QT_TRANSLATE_NOOP("DBG", "Failed to load %s, falling back to regular TitanEngine.dll"), fullPath.c_str());
+        }
+        return (FARPROC)hModule;
+    }
+
+    return 0;
+}
+
+// Visual Studio 2015 Update 3 made this const per default
+// https://dev.to/yumetodo/list-of-mscver-and-mscfullver-8nd
+#if _MSC_FULL_VER >= 190024210
+const
+#endif // _MSC_FULL_VER
+PfnDliHook __pfnDliNotifyHook2 = delayHook;
+
 extern "C" DLL_EXPORT const char* _dbg_dbginit()
 {
+    if(!*szProgramDir)
+        return "GetModuleFileNameW failed!";
+
     if(!EngineCheckStructAlignment(UE_STRUCT_TITAN_ENGINE_CONTEXT, sizeof(TITAN_ENGINE_CONTEXT_t)))
         return "Invalid TITAN_ENGINE_CONTEXT_t alignment!";
 
     static_assert(sizeof(TITAN_ENGINE_CONTEXT_t) == sizeof(REGISTERCONTEXT), "Invalid REGISTERCONTEXT alignment!");
 
-    wchar_t wszDir[deflen] = L"";
-    if(!GetModuleFileNameW(hInst, wszDir, deflen))
-        return "GetModuleFileNameW failed!";
-    strcpy_s(szProgramDir, StringUtils::Utf16ToUtf8(wszDir).c_str());
-    int len = (int)strlen(szProgramDir);
-    while(szProgramDir[len] != '\\')
-        len--;
-    szProgramDir[len] = 0;
+    strcpy_s(szDllLoaderPath, szProgramDir);
+    strcat_s(szDllLoaderPath, "\\loaddll.exe");
+
 #ifdef ENABLE_MEM_TRACE
     strcpy_s(alloctrace, szProgramDir);
     strcat_s(alloctrace, "\\alloctrace.txt");
@@ -646,11 +712,8 @@ extern "C" DLL_EXPORT const char* _dbg_dbginit()
     dputs(QT_TRANSLATE_NOOP("DBG", "Setting JSON memory management functions..."));
     json_set_alloc_funcs(json_malloc, json_free);
     //#endif //ENABLE_MEM_TRACE
-    dputs(QT_TRANSLATE_NOOP("DBG", "Initializing capstone..."));
+    dputs(QT_TRANSLATE_NOOP("DBG", "Initializing Zydis..."));
     Zydis::GlobalInitialize();
-    dputs(QT_TRANSLATE_NOOP("DBG", "Initializing Yara..."));
-    if(yr_initialize() != ERROR_SUCCESS)
-        return "Failed to initialize Yara!";
     dputs(QT_TRANSLATE_NOOP("DBG", "Getting directory information..."));
 
     strcpy_s(scriptDllDir, szProgramDir);
@@ -658,7 +721,13 @@ extern "C" DLL_EXPORT const char* _dbg_dbginit()
     initDataInstMap();
 
     dputs(QT_TRANSLATE_NOOP("DBG", "Start file read thread..."));
-    CloseHandle(CreateThread(nullptr, 0, loadDbThread, nullptr, 0, nullptr));
+    {
+        auto hEvent = CreateEventW(nullptr, false, FALSE, nullptr);
+        CloseHandle(CreateThread(nullptr, 0, loadDbThread, hEvent, 0, nullptr));
+        // Wait until the loadDbThread signals it's finished
+        WaitForSingleObject(hEvent, INFINITE);
+        CloseHandle(hEvent);
+    }
 
     // Create database directory in the local debugger folder
     DbSetPath(StringUtils::sprintf("%s\\db", szProgramDir).c_str(), nullptr);
@@ -751,7 +820,7 @@ extern "C" DLL_EXPORT const char* _dbg_dbginit()
         DbgCmdExec(StringUtils::Utf16ToUtf8(StringUtils::sprintf(L"init \"%s\", \"%s\"", escape(argv[1]).c_str(), escape(argv[2]).c_str())).c_str());
     else if(argc == 4) //3 arguments (init filename, cmdline, currentdir)
         DbgCmdExec(StringUtils::Utf16ToUtf8(StringUtils::sprintf(L"init \"%s\", \"%s\", \"%s\"", escape(argv[1]).c_str(), escape(argv[2]).c_str(), escape(argv[3]).c_str())).c_str());
-    else if(argc == 5 && !_wcsicmp(argv[1], L"-a") && !_wcsicmp(argv[3], L"-e")) //4 arguments (JIT)
+    else if(argc == 5 && (!_wcsicmp(argv[1], L"-a") || !_wcsicmp(argv[1], L"-p")) && !_wcsicmp(argv[3], L"-e")) //4 arguments (JIT)
         DbgCmdExec(StringUtils::Utf16ToUtf8(StringUtils::sprintf(L"attach .%s, .%s", argv[2], argv[4])).c_str()); //attach pid, event
     else if(argc == 5 && !_wcsicmp(argv[1], L"-p") && !_wcsicmp(argv[3], L"-tid")) //4 arguments (PLMDebug)
         DbgCmdExec(StringUtils::Utf16ToUtf8(StringUtils::sprintf(L"attach .%s, 0, .%s", argv[2], argv[4])).c_str()); //attach pid, 0, tid
@@ -778,7 +847,6 @@ extern "C" DLL_EXPORT void _dbg_dbgexitsignal()
     dputs(QT_TRANSLATE_NOOP("DBG", "Cleaning up allocated data..."));
     cmdfree();
     varfree();
-    yr_finalize();
     Zydis::GlobalFinalize();
     dputs(QT_TRANSLATE_NOOP("DBG", "Cleaning up wait objects..."));
     waitdeinitialize();

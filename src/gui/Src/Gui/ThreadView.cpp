@@ -17,7 +17,7 @@ void ThreadView::contextMenuSlot(const QPoint & pos)
 void ThreadView::GoToThreadEntry()
 {
     QString addr_text = getCellContent(getInitialSelection(), 2);
-    DbgCmdExecDirect(QString("disasm " + addr_text).toUtf8().constData());
+    DbgCmdExecDirect(QString("disasm " + addr_text));
 }
 
 void ThreadView::setupContextMenu()
@@ -143,12 +143,12 @@ void ThreadView::ExecCommand()
             for(int i : getSelection())
             {
                 QString specializedCommand = command;
-                specializedCommand.replace(QChar('$'), getCellContent(i, 1)); // $ -> Thread Id
-                DbgCmdExec(specializedCommand.toUtf8().constData());
+                specializedCommand.replace(QChar('$'), ToHexString(getCellUserdata(i, 1))); // $ -> Thread Id
+                DbgCmdExec(specializedCommand);
             }
         }
         else
-            DbgCmdExec(command.toUtf8().constData());
+            DbgCmdExec(command);
     }
 }
 
@@ -157,7 +157,7 @@ ThreadView::ThreadView(StdTable* parent) : StdTable(parent)
     enableMultiSelection(true);
     int charwidth = getCharWidth();
     addColumnAt(8 + charwidth * sizeof(unsigned int) * 2, tr("Number"), true, "", SortBy::AsInt);
-    addColumnAt(8 + charwidth * sizeof(unsigned int) * 2, tr("ID"), true, "", SortBy::AsHex);
+    addColumnAt(8 + charwidth * sizeof(unsigned int) * 2, tr("ID"), true, "", ConfigBool("Gui", "PidTidInHex") ? SortBy::AsHex : SortBy::AsInt);
     addColumnAt(8 + charwidth * sizeof(duint) * 2, tr("Entry"), true, "", SortBy::AsHex);
     addColumnAt(8 + charwidth * sizeof(duint) * 2, tr("TEB"), true, "", SortBy::AsHex);
     addColumnAt(8 + charwidth * sizeof(duint) * 2, ArchValue(tr("EIP"), tr("RIP")), true, "", SortBy::AsHex);
@@ -187,13 +187,15 @@ void ThreadView::updateThreadList()
     memset(&threadList, 0, sizeof(THREADLIST));
     DbgGetThreadList(&threadList);
     setRowCount(threadList.count);
+    auto tidFormat = ConfigBool("Gui", "PidTidInHex") ? "%X" : "%d";
     for(int i = 0; i < threadList.count; i++)
     {
         if(!threadList.list[i].BasicInfo.ThreadNumber)
             setCellContent(i, 0, tr("Main"));
         else
             setCellContent(i, 0, ToDecString(threadList.list[i].BasicInfo.ThreadNumber));
-        setCellContent(i, 1, ToHexString(threadList.list[i].BasicInfo.ThreadId));
+        setCellContent(i, 1, QString().sprintf(tidFormat, threadList.list[i].BasicInfo.ThreadId));
+        setCellUserdata(i, 1, threadList.list[i].BasicInfo.ThreadId);
         setCellContent(i, 2, ToPtrString(threadList.list[i].BasicInfo.ThreadStartAddress));
         setCellContent(i, 3, ToPtrString(threadList.list[i].BasicInfo.ThreadLocalBase));
         setCellContent(i, 4, ToPtrString(threadList.list[i].ThreadCip));
@@ -353,12 +355,12 @@ void ThreadView::updateThreadList()
         setCellContent(i, 12, ToLongLongHexString(threadList.list[i].Cycles));
         setCellContent(i, 13, threadList.list[i].BasicInfo.threadName);
     }
-    mCurrentThreadId = "NONE";
+    mCurrentThreadId = -1;
     if(threadList.count)
     {
         int currentThread = threadList.CurrentThread;
         if(currentThread >= 0 && currentThread < threadList.count)
-            mCurrentThreadId = ToHexString(threadList.list[currentThread].BasicInfo.ThreadId);
+            mCurrentThreadId = threadList.list[currentThread].BasicInfo.ThreadId;
         BridgeFree(threadList.list);
     }
     reloadData();
@@ -367,7 +369,7 @@ void ThreadView::updateThreadList()
 QString ThreadView::paintContent(QPainter* painter, dsint rowBase, int rowOffset, int col, int x, int y, int w, int h)
 {
     QString ret = StdTable::paintContent(painter, rowBase, rowOffset, col, x, y, w, h);
-    QString threadId = getCellContent(rowBase + rowOffset, 1);
+    duint threadId = getCellUserdata(rowBase + rowOffset, 1);
     if(threadId == mCurrentThreadId && !col)
     {
         painter->fillRect(QRect(x, y, w, h), QBrush(ConfigColor("ThreadCurrentBackgroundColor")));
@@ -380,21 +382,21 @@ QString ThreadView::paintContent(QPainter* painter, dsint rowBase, int rowOffset
 
 void ThreadView::doubleClickedSlot()
 {
-    QString threadId = getCellContent(getInitialSelection(), 1);
-    DbgCmdExecDirect(QString("switchthread " + threadId).toUtf8().constData());
+    duint threadId = getCellUserdata(getInitialSelection(), 1);
+    DbgCmdExecDirect("switchthread " + ToHexString(threadId));
 
     QString addr_text = getCellContent(getInitialSelection(), 4);
-    DbgCmdExecDirect(QString("disasm " + addr_text).toUtf8().constData());
+    DbgCmdExec("disasm " + addr_text);
 }
 
 void ThreadView::SetNameSlot()
 {
-    QString threadId = getCellContent(getInitialSelection(), 1);
+    duint threadId = getCellUserdata(getInitialSelection(), 1);
     LineEditDialog mLineEdit(this);
     mLineEdit.setWindowTitle(tr("Name") + threadId);
     mLineEdit.setText(getCellContent(getInitialSelection(), 13));
     if(mLineEdit.exec() != QDialog::Accepted)
         return;
     QString escapedName = mLineEdit.editText.replace("\"", "\\\"");
-    DbgCmdExec(QString("setthreadname %1, \"%2\"").arg(threadId).arg(escapedName).toUtf8().constData());
+    DbgCmdExec(QString("setthreadname %1, \"%2\"").arg(ToHexString(threadId)).arg(escapedName));
 }

@@ -280,7 +280,7 @@ const String StringUtils::WHITESPACE = " \n\r\t";
 
 String StringUtils::Trim(const String & s, const String & delim)
 {
-    return TrimRight(TrimLeft(s));
+    return TrimRight(TrimLeft(s, delim), delim);
 }
 
 String StringUtils::TrimLeft(const String & s, const String & delim)
@@ -377,6 +377,21 @@ WString StringUtils::LocalCpToUtf16(const char* str)
     return convertedString;
 }
 
+String StringUtils::Utf16ToLocalCp(const WString & str)
+{
+    String convertedString;
+    if(str.size() == 0)
+        return convertedString;
+    int requiredSize = WideCharToMultiByte(CP_ACP, 0, str.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if(requiredSize > 0)
+    {
+        convertedString.resize(requiredSize - 1);
+        if(!WideCharToMultiByte(CP_ACP, 0, str.c_str(), -1, (char*)convertedString.c_str(), requiredSize, nullptr, nullptr))
+            convertedString.clear();
+    }
+    return convertedString;
+}
+
 //Taken from: https://stackoverflow.com/a/24315631
 void StringUtils::ReplaceAll(String & s, const String & from, const String & to)
 {
@@ -398,7 +413,7 @@ void StringUtils::ReplaceAll(WString & s, const WString & from, const WString & 
     }
 }
 
-String StringUtils::vsprintf(const char* format, va_list args)
+String StringUtils::vsprintf(_In_z_ _Printf_format_string_ const char* format, va_list args)
 {
     char sbuffer[64] = "";
     if(_vsnprintf_s(sbuffer, _TRUNCATE, format, args) != -1)
@@ -419,7 +434,7 @@ String StringUtils::vsprintf(const char* format, va_list args)
     return String(buffer.data());
 }
 
-String StringUtils::sprintf(_Printf_format_string_ const char* format, ...)
+String StringUtils::sprintf(_In_z_ _Printf_format_string_ const char* format, ...)
 {
     va_list args;
     va_start(args, format);
@@ -428,7 +443,7 @@ String StringUtils::sprintf(_Printf_format_string_ const char* format, ...)
     return result;
 }
 
-WString StringUtils::vsprintf(const wchar_t* format, va_list args)
+WString StringUtils::vsprintf(_In_z_ _Printf_format_string_ const wchar_t* format, va_list args)
 {
     wchar_t sbuffer[64] = L"";
     if(_vsnwprintf_s(sbuffer, _TRUNCATE, format, args) != -1)
@@ -449,7 +464,7 @@ WString StringUtils::vsprintf(const wchar_t* format, va_list args)
     return WString(buffer.data());
 }
 
-WString StringUtils::sprintf(_Printf_format_string_ const wchar_t* format, ...)
+WString StringUtils::sprintf(_In_z_ _Printf_format_string_ const wchar_t* format, ...)
 {
     va_list args;
     va_start(args, format);
@@ -513,7 +528,7 @@ String StringUtils::ToHex(unsigned long long value)
 
 #define HEXLOOKUP "0123456789ABCDEF"
 
-String StringUtils::ToHex(unsigned char* buffer, size_t size, bool reverse)
+String StringUtils::ToHex(const unsigned char* buffer, size_t size, bool reverse)
 {
     String result;
     result.resize(size * 2);
@@ -526,7 +541,7 @@ String StringUtils::ToHex(unsigned char* buffer, size_t size, bool reverse)
     return result;
 }
 
-String StringUtils::ToCompressedHex(unsigned char* buffer, size_t size)
+String StringUtils::ToCompressedHex(const unsigned char* buffer, size_t size)
 {
     if(!size)
         return "";
@@ -602,4 +617,17 @@ bool StringUtils::FromCompressedHex(const String & text, std::vector<unsigned ch
         }
     }
     return true;
+}
+
+int StringUtils::hackicmp(const char* s1, const char* s2)
+{
+    unsigned char c1, c2;
+    while((c1 = *s1++) == (c2 = *s2++))
+        if(c1 == '\0')
+            return 0;
+    s1--, s2--;
+    while((c1 = tolower(*s1++)) == (c2 = tolower(*s2++)))
+        if(c1 == '\0')
+            return 0;
+    return c1 - c2;
 }

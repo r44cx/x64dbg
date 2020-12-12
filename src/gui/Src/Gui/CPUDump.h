@@ -7,6 +7,7 @@
 class CPUMultiDump;
 class CPUDisassembly;
 class GotoDialog;
+class CommonActions;
 
 class CPUDump : public HexDump
 {
@@ -16,35 +17,16 @@ public:
     void getColumnRichText(int col, dsint rva, RichTextPainter::List & richText) override;
     QString paintContent(QPainter* painter, dsint rowBase, int rowOffset, int col, int x, int y, int w, int h);
     void setupContextMenu();
+    void getAttention();
     void contextMenuEvent(QContextMenuEvent* event);
     void mouseDoubleClickEvent(QMouseEvent* event);
     void mouseMoveEvent(QMouseEvent* event);
 
 signals:
     void displayReferencesWidget();
+    void showDisassemblyTab(duint selectionStart, duint selectionEnd, duint firstAddress);
 
 public slots:
-    void memoryAccessSingleshootSlot();
-    void memoryAccessRestoreSlot();
-    void memoryReadSingleshootSlot();
-    void memoryReadRestoreSlot();
-    void memoryWriteSingleshootSlot();
-    void memoryWriteRestoreSlot();
-    void memoryExecuteSingleshootSlot();
-    void memoryExecuteRestoreSlot();
-    void memoryRemoveSlot();
-    void hardwareAccess1Slot();
-    void hardwareAccess2Slot();
-    void hardwareAccess4Slot();
-    void hardwareAccess8Slot();
-    void hardwareWrite1Slot();
-    void hardwareWrite2Slot();
-    void hardwareWrite4Slot();
-    void hardwareWrite8Slot();
-    void hardwareExecuteSlot();
-    void hardwareRemoveSlot();
-
-    void setLabelSlot();
     void modifyValueSlot();
     void gotoExpressionSlot();
     void gotoFileOffsetSlot();
@@ -79,7 +61,6 @@ public slots:
     void floatDoubleSlot();
     void floatLongDoubleSlot();
 
-    void addressSlot();
     void addressUnicodeSlot();
     void addressAsciiSlot();
     void disassemblySlot();
@@ -96,27 +77,17 @@ public slots:
     void findPattern();
     void copyFileOffsetSlot();
     void undoSelectionSlot();
-    void followStackSlot();
     void findReferencesSlot();
-    void followInDisasmSlot();
-    void followDataSlot();
-    void followDataDumpSlot();
-
-    void watchSlot();
 
     void selectionUpdatedSlot();
-    void yaraSlot();
-    void entropySlot();
     void syncWithExpressionSlot();
-    void followInDumpNSlot();
     void allocMemorySlot();
 
-    void followInMemoryMapSlot();
     void headerButtonReleasedSlot(int colIndex);
-    void asciiAddressDumpModeUpdatedSlot();
 
 private:
     MenuBuilder* mMenuBuilder;
+    CommonActions* mCommonActions;
 
     QMenu* mPluginMenu;
     QMenu* mFollowInDumpMenu;
@@ -127,7 +98,6 @@ private:
     CPUDisassembly* mDisas;
     CPUMultiDump* mMultiDump;
     int mAsciiSeparator = 0;
-    bool mAsciiAddressDumpMode;
 
     enum ViewEnum_t
     {

@@ -193,8 +193,6 @@ void PatchDialog::groupToggle()
     QString addrText = ToPtrString(groupStart);
     QString title = "<font color='" + color + "'><b>" + QString().sprintf("%d:", group) + addrText + "</b></font>";
     mGroupSelector->setGroupTitle(title);
-    DbgCmdExecDirect(QString("disasm " + addrText).toUtf8().constData());
-    DbgCmdExecDirect(QString("dump " + addrText).toUtf8().constData());
 }
 
 void PatchDialog::groupPrevious()
@@ -218,8 +216,8 @@ void PatchDialog::groupPrevious()
     mGroupSelector->setPreviousEnabled(hasPreviousGroup(curPatchList, group));
     mGroupSelector->setNextEnabled(hasNextGroup(curPatchList, group));
     mGroupSelector->showNormal();
-    DbgCmdExecDirect(QString("disasm " + addrText).toUtf8().constData());
-    DbgCmdExecDirect(QString("dump " + addrText).toUtf8().constData());
+    DbgCmdExecDirect(QString("disasm " + addrText));
+    DbgCmdExecDirect(QString("dump " + addrText));
 }
 
 void PatchDialog::groupNext()
@@ -243,8 +241,8 @@ void PatchDialog::groupNext()
     mGroupSelector->setPreviousEnabled(hasPreviousGroup(curPatchList, group));
     mGroupSelector->setNextEnabled(hasNextGroup(curPatchList, group));
     mGroupSelector->showNormal();
-    DbgCmdExecDirect(QString("disasm " + addrText).toUtf8().constData());
-    DbgCmdExecDirect(QString("dump " + addrText).toUtf8().constData());
+    DbgCmdExecDirect(QString("disasm " + addrText));
+    DbgCmdExecDirect(QString("dump " + addrText));
 }
 
 void PatchDialog::on_listModules_itemSelectionChanged()
@@ -403,8 +401,8 @@ void PatchDialog::on_listPatches_itemSelectionChanged()
     if(!groupStart)
         return;
     QString addrText = ToPtrString(groupStart);
-    DbgCmdExecDirect(QString("disasm " + addrText).toUtf8().constData());
-    DbgCmdExecDirect(QString("dump " + addrText).toUtf8().constData());
+    DbgCmdExecDirect(QString("disasm " + addrText));
+    DbgCmdExecDirect(QString("dump " + addrText));
 }
 
 void PatchDialog::on_btnPickGroups_clicked()
@@ -428,8 +426,8 @@ void PatchDialog::on_btnPickGroups_clicked()
     mGroupSelector->setPreviousEnabled(hasPreviousGroup(curPatchList, group));
     mGroupSelector->setNextEnabled(hasNextGroup(curPatchList, group));
     mGroupSelector->show();
-    DbgCmdExecDirect(QString("disasm " + addrText).toUtf8().constData());
-    DbgCmdExecDirect(QString("dump " + addrText).toUtf8().constData());
+    DbgCmdExecDirect(QString("disasm " + addrText));
+    DbgCmdExecDirect(QString("dump " + addrText));
 }
 
 void PatchDialog::on_btnPatchFile_clicked()
@@ -674,7 +672,8 @@ void PatchDialog::saveAs1337(const QString & filename)
     QFile file(filename);
     file.open(QFile::WriteOnly | QFile::Text);
     QString text = lines.join("\n");
-    file.write(text.toUtf8().constData(), text.length());
+    QByteArray textUtf8 = text.toUtf8();
+    file.write(textUtf8.constData(), textUtf8.length());
     file.close();
 
     SimpleInfoBox(this, tr("Information"), tr("%1 patch(es) exported!").arg(patches));

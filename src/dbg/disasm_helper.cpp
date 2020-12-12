@@ -111,7 +111,7 @@ duint disasmnext(unsigned char* data, duint base, duint size, duint ip, int n)
     return ip;
 }
 
-static void HandleCapstoneOperand(Zydis & cp, int opindex, DISASM_ARG* arg, bool getregs)
+static void HandleZydisOperand(Zydis & cp, int opindex, DISASM_ARG* arg, bool getregs)
 {
     auto value = cp.ResolveOpValue(opindex, [&cp, getregs](ZydisRegister reg)
     {
@@ -152,6 +152,30 @@ static void HandleCapstoneOperand(Zydis & cp, int opindex, DISASM_ARG* arg, bool
             arg->segment = ArchValue(SEG_FS, SEG_GS);
             value += ThreadGetLocalBase(ThreadGetId(hActiveThread));
         }
+        else
+        {
+            switch(mem.segment)
+            {
+            case ZYDIS_REGISTER_CS:
+                arg->segment = SEG_CS;
+                break;
+            case ZYDIS_REGISTER_DS:
+                arg->segment = SEG_DS;
+                break;
+            case ZYDIS_REGISTER_ES:
+                arg->segment = SEG_ES;
+                break;
+            case ZYDIS_REGISTER_FS:
+                arg->segment = SEG_FS;
+                break;
+            case ZYDIS_REGISTER_GS:
+                arg->segment = SEG_GS;
+                break;
+            case ZYDIS_REGISTER_SS:
+                arg->segment = SEG_SS;
+                break;
+            }
+        }
         arg->value = value;
         if(DbgMemIsValidReadPtr(value))
         {
@@ -182,6 +206,11 @@ static void HandleCapstoneOperand(Zydis & cp, int opindex, DISASM_ARG* arg, bool
     }
     break;
 
+    case ZYDIS_OPERAND_TYPE_POINTER:
+        arg->type = arg_normal;
+        arg->value = op.ptr.offset;
+        break;
+
     default:
         break;
     }
@@ -202,7 +231,7 @@ void disasmget(Zydis & cp, unsigned char* buffer, duint addr, DISASM_INSTR* inst
         return;
     }
     auto cpInstr = cp.GetInstr();
-    strcpy_s(instr->instruction, cp.InstructionText().c_str());
+    strncpy_s(instr->instruction, cp.InstructionText().c_str(), _TRUNCATE);
     instr->instr_size = cpInstr->length;
     if(cp.IsBranchType(Zydis::BTJmp | Zydis::BTLoop | Zydis::BTRet | Zydis::BTCall))
         instr->type = instr_branch;
@@ -212,7 +241,7 @@ void disasmget(Zydis & cp, unsigned char* buffer, duint addr, DISASM_INSTR* inst
         instr->type = instr_normal;
     instr->argcount = cp.OpCount() <= 3 ? cp.OpCount() : 3;
     for(int i = 0; i < instr->argcount; i++)
-        HandleCapstoneOperand(cp, i, &instr->arg[i], getregs);
+        HandleZydisOperand(cp, i, &instr->arg[i], getregs);
 }
 
 void disasmget(Zydis & cp, duint addr, DISASM_INSTR* instr, bool getregs)
@@ -251,61 +280,126 @@ void disasmget(duint addr, DISASM_INSTR* instr, bool getregs)
         memset(instr, 0, sizeof(DISASM_INSTR)); // Buffer overflow
 }
 
+bool isunicodestring(const WString & data)
+{
+    if(data.size() < 2)
+        return false;
+    for(auto & i : data)
+    {
+        // No specials
+        if(i >= 0xFFF0)
+            return false;
+        // No ANSI control chars
+        if(i < 0x80 && !isprint(i) && !isspace(i))
+            return false;
+        // No C1 control chars
+        if(i >= 0x80 && i < 0xA0)
+            return false;
+        // No 0xFF char
+        if(i == 0xFF)
+            return false;
+        // No surrogates and private use chars
+        if(i >= 0xD800 && i <= 0xF8FF)
+            return false;
+    }
+    return true;
+}
+
+// These functions are exported so that plugins can use this to detect a string, or replace with a plugin-developed string dection algorithm through hooking
 extern "C" __declspec(dllexport) bool isasciistring(const unsigned char* data, int maxlen)
 {
     int len = 0;
-    for(char* p = (char*)data; *p; len++, p++)
+    char* safebuffer = new char[maxlen];
+    if(!safebuffer)
+        return false;
+    for(const char* p = (const char*)data; *p; len++, p++)
     {
         if(len >= maxlen)
             break;
+        safebuffer[p - (const char*)data] = *p;
     }
 
-    if(len < 2 || len + 1 >= maxlen)
+    if(len < 2)
+    {
+        delete[] safebuffer;
         return false;
-    for(int i = 0; i < len; i++)
-        if(!isprint(data[i]) && !isspace(data[i]))
-            return false;
+    }
+    safebuffer[len - 1] = 0; // Mark the end of string
+    if((maxlen % 2) == 0 && (safebuffer[maxlen - 2] & 0x80))
+        safebuffer[maxlen - 2] = 0; // Keep DBCS strings from being chopped in the middle
+
+    String data2;
+    WString wdata2;
+    // Convert to and from Unicode
+    wdata2 = StringUtils::LocalCpToUtf16(safebuffer);
+    delete[] safebuffer;
+    if(wdata2.size() < 2)
+        return false;
+    data2 = StringUtils::Utf16ToLocalCp(wdata2);
+    if(data2.size() < 2)
+        return false;
+    // Is the data exactly representable in both ANSI and Unicode?
+    if(memcmp(data2.c_str(), data, data2.size()) != 0)
+        return false;
+    // Filter out bad chars
+    if(!isunicodestring(wdata2))
+        return false;
     return true;
 }
 
 extern "C" __declspec(dllexport) bool isunicodestring(const unsigned char* data, int maxlen)
 {
     int len = 0;
-    for(wchar_t* p = (wchar_t*)data; *p; len++, p++)
+    wchar_t* safebuffer = new wchar_t[maxlen];
+    if(!safebuffer)
+        return false;
+    for(const wchar_t* p = (const wchar_t*)data; *p; len += sizeof(wchar_t), p++)
     {
         if(len >= maxlen)
             break;
+        safebuffer[p - (const wchar_t*)data] = *p;
     }
 
-    if(len < 2 || len + 1 >= maxlen)
-        return false;
-
-    for(int i = 0; i < len * 2; i += 2)
+    if(len < 2 * sizeof(wchar_t))
     {
-        if(data[i + 1]) //Extended ASCII only
-            return false;
-        if(!isprint(data[i]) && !isspace(data[i]))
-            return false;
+        delete[] safebuffer;
+        return false;
     }
+    safebuffer[len / sizeof(wchar_t) - 1] = 0; // Mark the end of string
+
+    String data2;
+    WString wdata2;
+    // Convert to and from ANSI
+    data2 = StringUtils::Utf16ToLocalCp(safebuffer);
+    delete[] safebuffer;
+    if(data2.size() < 2)
+        return false;
+    wdata2 = StringUtils::LocalCpToUtf16(data2);
+    if(wdata2.size() < 2)
+        return false;
+    // Is the data exactly representable in both ANSI and Unicode?
+    if(memcmp(wdata2.c_str(), data, wdata2.size() * sizeof(wchar_t)) != 0)
+        return false;
+    // Filter out bad chars
+    if(!isunicodestring(wdata2))
+        return false;
     return true;
 }
 
 bool disasmispossiblestring(duint addr, STRING_TYPE* type)
 {
-    unsigned char data[11];
+    unsigned char data[60];
     memset(data, 0, sizeof(data));
     duint bytesRead = 0;
-    if(!MemReadUnsafe(addr, data, sizeof(data) - 3, &bytesRead) && bytesRead < 2)
+    if(!MemReadUnsafe(addr, data, sizeof(data), &bytesRead) && bytesRead < 2)
         return false;
-    duint test = 0;
-    memcpy(&test, data, sizeof(duint));
     if(isasciistring(data, sizeof(data)))
     {
         if(type)
             *type = str_ascii;
         return true;
     }
-    if(isunicodestring(data, _countof(data)))
+    if(isunicodestring(data, sizeof(data) / 2))
     {
         if(type)
             *type = str_unicode;
@@ -333,6 +427,10 @@ bool disasmgetstringat(duint addr, STRING_TYPE* type, char* ascii, char* unicode
     {
         if(type)
             *type = str_ascii;
+
+        // Convert ANSI string to UTF-8
+        std::string asciiData2 = StringUtils::LocalCpToUtf8((const char*)data());
+        memcpy(asciiData, asciiData2.c_str(), min((size_t(maxlen) + 1) * 2, asciiData2.size() + 1));
 
         // Escape the string
         String escaped = StringUtils::Escape(asciiData);
