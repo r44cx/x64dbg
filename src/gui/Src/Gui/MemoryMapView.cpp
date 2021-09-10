@@ -54,6 +54,10 @@ void MemoryMapView::setupContextMenu()
     connect(this, SIGNAL(enterPressedSignal()), this, SLOT(doubleClickedSlot()));
     connect(this, SIGNAL(doubleClickedSignal()), this, SLOT(doubleClickedSlot()));
 
+    //Follow in Symbols
+    mFollowSymbols = new QAction(DIcon("pdb.png"), tr("&Follow in Symbols"), this);
+    connect(mFollowSymbols, SIGNAL(triggered()), this, SLOT(followSymbolsSlot()));
+
     //Set PageMemory Rights
     mPageMemoryRights = new QAction(DIcon("memmap_set_page_memory_rights.png"), tr("Set Page Memory Rights"), this);
     connect(mPageMemoryRights, SIGNAL(triggered()), this, SLOT(pageMemoryRights()));
@@ -159,8 +163,13 @@ void MemoryMapView::setupContextMenu()
     connect(mFindPattern, SIGNAL(triggered()), this, SLOT(findPatternSlot()));
 
     //Dump
+    //TODO: These two actions should also appear in CPUDump
     mDumpMemory = new QAction(DIcon("binary_save.png"), tr("&Dump Memory to File"), this);
     connect(mDumpMemory, SIGNAL(triggered()), this, SLOT(dumpMemory()));
+
+    //Load
+    mLoadMemory = new QAction(DIcon(""), tr("&Overwrite with Data from File"), this);
+    connect(mLoadMemory, SIGNAL(triggered()), this, SLOT(loadMemory()));
 
     //Add virtual module
     mAddVirtualMod = new QAction(DIcon("virtual.png"), tr("Add virtual module"), this);
@@ -200,10 +209,18 @@ void MemoryMapView::contextMenuSlot(const QPoint & pos)
 {
     if(!DbgIsDebugging())
         return;
+
+    duint selectedAddr = getCellUserdata(getInitialSelection(), 0);
+
     QMenu wMenu(this); //create context menu
     wMenu.addAction(mFollowDisassembly);
     wMenu.addAction(mFollowDump);
+
+    if(DbgFunctions()->ModBaseFromAddr(selectedAddr))
+        wMenu.addAction(mFollowSymbols);
+
     wMenu.addAction(mDumpMemory);
+    //wMenu.addAction(mLoadMemory); //TODO:loaddata command
     wMenu.addAction(mComment);
     wMenu.addAction(mFindPattern);
     wMenu.addAction(mSwitchView);
@@ -229,7 +246,6 @@ void MemoryMapView::contextMenuSlot(const QPoint & pos)
         wMenu.addMenu(&wCopyMenu);
     }
 
-    duint selectedAddr = getCellUserdata(getInitialSelection(), 0);
     if((DbgGetBpxTypeAt(selectedAddr) & bp_memory) == bp_memory) //memory breakpoint set
     {
         mMemoryAccessMenu->menuAction()->setVisible(false);
@@ -468,6 +484,11 @@ void MemoryMapView::followDisassemblerSlot()
     DbgCmdExec(QString("disasm %1").arg(getCellContent(getInitialSelection(), 0)));
 }
 
+void MemoryMapView::followSymbolsSlot()
+{
+    DbgCmdExec(QString("symfollow %1").arg(getCellContent(getInitialSelection(), 0)));
+}
+
 void MemoryMapView::doubleClickedSlot()
 {
     auto addr = DbgValFromString(getCellContent(getInitialSelection(), 0).toUtf8().constData());
@@ -584,6 +605,24 @@ void MemoryMapView::dumpMemory()
     }
 }
 
+void MemoryMapView::loadMemory()
+{
+    char modname[MAX_MODULE_SIZE] = "";
+    if(!DbgFunctions()->ModNameFromAddr(DbgEval("mod.main()"), modname, false))
+        *modname = '\0';
+    auto addr = getCellContent(getInitialSelection(), 0);
+    QString defaultFile = QString("%1/%2%3.bin").arg(QDir::currentPath(), *modname ? modname +  QString("_") : "", addr);
+    QString fileName = QFileDialog::getOpenFileName(this, tr("Load Memory Region"), defaultFile, tr("Binary files (*.bin);;All files (*.*)"));
+
+    if(fileName.length())
+    {
+        fileName = QDir::toNativeSeparators(fileName);
+        //TODO: loaddata command (Does ODbgScript support that?)
+        QString cmd = QString("savedata \"%1\",%2,%3").arg(fileName, addr, getCellContent(getInitialSelection(), 1));
+        DbgCmdExec(cmd);
+    }
+}
+
 void MemoryMapView::selectAddress(duint va)
 {
     auto base = DbgMemFindBaseAddr(va, nullptr);
@@ -643,7 +682,9 @@ void MemoryMapView::findReferencesSlot()
 
 void MemoryMapView::selectionGetSlot(SELECTIONDATA* selection)
 {
-    selection->start = selection->end = duint(getCellContent(getInitialSelection(), 0).toULongLong(nullptr, 16));
+    auto sel = getSelection();
+    selection->start = getCellUserdata(sel.front(), 0);
+    selection->end = getCellUserdata(sel.back(), 0) + getCellUserdata(sel.back(), 1) - 1;
     Bridge::getBridge()->setResult(BridgeResult::SelectionGet, 1);
 }
 

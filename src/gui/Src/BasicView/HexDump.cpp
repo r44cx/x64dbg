@@ -542,6 +542,14 @@ void HexDump::mouseReleaseEvent(QMouseEvent* event)
         AbstractTableView::mouseReleaseEvent(event);
 }
 
+void HexDump::wheelEvent(QWheelEvent* event)
+{
+    if(event->modifiers() == Qt::NoModifier)
+        AbstractTableView::wheelEvent(event);
+    else if(event->modifiers() == Qt::ControlModifier) // Zoom
+        Config()->zoomFont("HexDump", event);
+}
+
 void HexDump::keyPressEvent(QKeyEvent* event)
 {
     int key = event->key();
@@ -855,6 +863,24 @@ void HexDump::getColumnRichText(int col, dsint rva, RichTextPainter::List & rich
                         curData.text.append(' ');
                     richText.push_back(curData);
                 }
+            }
+        }
+
+        auto dataStartAddr = rvaToVa(rva);
+        auto dataEndAddr = dataStartAddr + wBufferByteCount - 1;
+
+        if(mUnderlineRangeStartVa && mUnderlineRangeEndVa)
+        {
+            // Check if the highlight ranges overlap
+            if(mUnderlineRangeStartVa <= dataEndAddr && dataStartAddr <= mUnderlineRangeEndVa)
+            {
+                for(RichTextPainter::CustomRichText_t & token : richText)
+                {
+                    token.underline = true;
+                    token.underlineColor = token.textColor;
+                }
+                while(richText.back().text == QStringLiteral(" "))
+                    richText.pop_back();
             }
         }
 

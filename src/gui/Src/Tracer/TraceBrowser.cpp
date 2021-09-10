@@ -16,13 +16,13 @@
 TraceBrowser::TraceBrowser(QWidget* parent) : AbstractTableView(parent)
 {
     mTraceFile = nullptr;
-    addColumnAt(getCharWidth() * 2 * 2 + 8, "", false); //index
-    addColumnAt(getCharWidth() * 2 * sizeof(dsint) + 8, "", false); //address
-    addColumnAt(getCharWidth() * 2 * 12 + 8, "", false); //bytes
-    addColumnAt(getCharWidth() * 40, "", false); //disassembly
-    addColumnAt(getCharWidth() * 50, "", false); //registers
-    addColumnAt(getCharWidth() * 50, "", false); //memory
-    addColumnAt(1000, "", false); //comments
+    addColumnAt(getCharWidth() * 2 * 2 + 8, tr("Index"), false); //index
+    addColumnAt(getCharWidth() * 2 * sizeof(dsint) + 8, tr("Address"), false); //address
+    addColumnAt(getCharWidth() * 2 * 12 + 8, tr("Bytes"), false); //bytes
+    addColumnAt(getCharWidth() * 40, tr("Disassembly"), false); //disassembly
+    addColumnAt(getCharWidth() * 50, tr("Registers"), false); //registers
+    addColumnAt(getCharWidth() * 50, tr("Memory"), false); //memory
+    addColumnAt(1000, tr("Comments"), false); //comments
     loadColumnFromConfig("Trace");
 
     setShowHeader(false); //hide header
@@ -254,7 +254,7 @@ QString TraceBrowser::paintContent(QPainter* painter, dsint rowBase, int rowOffs
     }
     if(mTraceFile->isError())
     {
-        GuiAddLogMessage(tr("An error occured when reading trace file.\r\n").toUtf8().constData());
+        GuiAddLogMessage(tr("An error occurred when reading trace file.\r\n").toUtf8().constData());
         mTraceFile->Close();
         delete mTraceFile;
         mTraceFile = nullptr;
@@ -876,6 +876,7 @@ void TraceBrowser::setupRightClickContextMenu()
     });
     MenuBuilder* gotoMenu = new MenuBuilder(this, isValid);
     gotoMenu->addAction(makeShortcutAction(DIcon("goto.png"), tr("Expression"), SLOT(gotoSlot()), "ActionGotoExpression"), isValid);
+    gotoMenu->addAction(makeAction(DIcon("arrow-step-rtr.png"), tr("Function return"), SLOT(rtrSlot())), isValid);
     gotoMenu->addAction(makeShortcutAction(DIcon("previous.png"), tr("Previous"), SLOT(gotoPreviousSlot()), "ActionGotoPrevious"), [this](QMenu*)
     {
         return mHistory.historyHasPrev();
@@ -916,10 +917,10 @@ void TraceBrowser::setupRightClickContextMenu()
                 menu->addAction(QString("%1: %2 -> %3").arg(getAddrText(MemoryAddress[i], nolabel, false)).arg(ToPtrString(MemoryOldContent[i])).arg(ToPtrString(MemoryNewContent[i])));
             }
             mRvaDisplayEnabled = RvaDisplayEnabled;
-            menu->addSeparator();
+            return true;
         }
-        menu->addAction(QString("ThreadID: %1").arg(mTraceFile->ThreadId(index)));
-        return true;
+        else
+            return false; //The information menu now only contains memory access info
     });
     mMenuBuilder->addMenu(makeMenu(tr("Information")), infoMenu);
 
@@ -1330,7 +1331,7 @@ void TraceBrowser::parseFinishedSlot()
 {
     if(mTraceFile->isError())
     {
-        SimpleErrorBox(this, tr("Error"), "Error when opening run trace file");
+        SimpleErrorBox(this, tr("Error"), tr("Error when opening run trace file"));
         delete mTraceFile;
         mTraceFile = nullptr;
         setRowCount(0);
@@ -1370,6 +1371,16 @@ void TraceBrowser::mnemonicHelpSlot()
     emit displayLogWidget();
 }
 
+void TraceBrowser::disasm(unsigned long long index, bool history)
+{
+    setSingleSelection(index);
+    makeVisible(index);
+    if(history)
+        mHistory.addVaToHistory(index);
+    updateViewport();
+    emit selectionChanged(getInitialSelection());
+}
+
 void TraceBrowser::gotoSlot()
 {
     if(mTraceFile == nullptr || mTraceFile->Progress() < 100)
@@ -1379,37 +1390,26 @@ void TraceBrowser::gotoSlot()
     {
         auto val = DbgValFromString(gotoDlg.expressionText.toUtf8().constData());
         if(val >= 0 && val < mTraceFile->Length())
-        {
-            setSingleSelection(val);
-            makeVisible(val);
-            mHistory.addVaToHistory(val);
-            updateViewport();
-        }
+            disasm(val);
     }
+}
+
+void TraceBrowser::rtrSlot()
+{
+    // Let's hope this search will be fast...
+    disasm(TraceFileSearchFuncReturn(mTraceFile, getInitialSelection()));
 }
 
 void TraceBrowser::gotoNextSlot()
 {
     if(mHistory.historyHasNext())
-    {
-        auto index = mHistory.historyNext();
-        setSingleSelection(index);
-        makeVisible(index);
-        updateViewport();
-        emit selectionChanged(getInitialSelection());
-    }
+        disasm(mHistory.historyNext(), false);
 }
 
 void TraceBrowser::gotoPreviousSlot()
 {
     if(mHistory.historyHasPrev())
-    {
-        auto index = mHistory.historyPrev();
-        setSingleSelection(index);
-        makeVisible(index);
-        updateViewport();
-        emit selectionChanged(getInitialSelection());
-    }
+        disasm(mHistory.historyPrev(), false);
 }
 
 void TraceBrowser::copyCipSlot()

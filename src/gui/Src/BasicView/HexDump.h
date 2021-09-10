@@ -92,6 +92,7 @@ public:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
 
     QString paintContent(QPainter* painter, dsint rowBase, int rowOffset, int col, int x, int y, int w, int h) override;
@@ -220,6 +221,8 @@ protected:
     QAction* mCopyAddress;
     QAction* mCopyRva;
     QAction* mCopySelection;
+    duint mUnderlineRangeStartVa = 0;
+    duint mUnderlineRangeEndVa = 0;
 };
 
 #endif // _HEXDUMP_H

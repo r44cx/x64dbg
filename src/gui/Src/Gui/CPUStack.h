@@ -22,6 +22,7 @@ public:
     QString paintContent(QPainter* painter, dsint rowBase, int rowOffset, int col, int x, int y, int w, int h) override;
     void contextMenuEvent(QContextMenuEvent* event);
     void mouseDoubleClickEvent(QMouseEvent* event);
+    void wheelEvent(QWheelEvent* event) override;
     void setupContextMenu();
     void updateFreezeStackAction();
 
@@ -54,6 +55,7 @@ public slots:
     void realignSlot();
     void freezeStackSlot();
     void dbgStateChangedSlot(DBGSTATE state);
+    void disasmSelectionChanged(dsint parVA);
     void updateSlot();
 
 private:

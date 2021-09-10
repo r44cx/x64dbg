@@ -5,6 +5,7 @@
 #include <QIcon>
 #include <QScreen>
 #include <QGuiApplication>
+#include <QWheelEvent>
 #include "AbstractTableView.h"
 
 Configuration* Configuration::mPtr = nullptr;
@@ -285,6 +286,7 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     guiBool.insert("DisableAutoComplete", false);
     guiBool.insert("CaseSensitiveAutoComplete", false);
     guiBool.insert("AutoRepeatOnEnter", false);
+    guiBool.insert("AutoFollowInStack", true);
     //Named menu settings
     insertMenuBuilderBools(&guiBool, "CPUDisassembly", 50); //CPUDisassembly
     insertMenuBuilderBools(&guiBool, "CPUDump", 50); //CPUDump
@@ -312,7 +314,7 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     AbstractTableView::setupColumnConfigDefaultValue(guiUint, "Watch1", 6);
     AbstractTableView::setupColumnConfigDefaultValue(guiUint, "BreakpointsView", 7);
     AbstractTableView::setupColumnConfigDefaultValue(guiUint, "MemoryMap", 8);
-    AbstractTableView::setupColumnConfigDefaultValue(guiUint, "CallStack", 6);
+    AbstractTableView::setupColumnConfigDefaultValue(guiUint, "CallStack", 7);
     AbstractTableView::setupColumnConfigDefaultValue(guiUint, "SEH", 4);
     AbstractTableView::setupColumnConfigDefaultValue(guiUint, "Script", 3);
     AbstractTableView::setupColumnConfigDefaultValue(guiUint, "Thread", 14);
@@ -381,6 +383,10 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     defaultShortcuts.insert("FileOpen", Shortcut({tr("File"), tr("Open")}, "F3", true));
     defaultShortcuts.insert("FileAttach", Shortcut({tr("File"), tr("Attach")}, "Alt+A", true));
     defaultShortcuts.insert("FileDetach", Shortcut({tr("File"), tr("Detach")}, "Ctrl+Alt+F2", true));
+    defaultShortcuts.insert("FileDbsave", Shortcut({tr("File"), tr("Save database")}, "", true));
+    defaultShortcuts.insert("FileDbrecovery", Shortcut({tr("File"), tr("Restore backup database")}, "", true));
+    defaultShortcuts.insert("FileDbload", Shortcut({tr("File"), tr("Reload database")}, "", true));
+    defaultShortcuts.insert("FileDbclear", Shortcut({tr("File"), tr("Clear database")}, "", true));
     defaultShortcuts.insert("FileImportDatabase", Shortcut({tr("File"), tr("Import database")}, "", true));
     defaultShortcuts.insert("FileExportDatabase", Shortcut({tr("File"), tr("Export database")}, "", true));
     defaultShortcuts.insert("FileRestartAdmin", Shortcut({tr("File"), tr("Restart as Admin")}, "", true));
@@ -1130,6 +1136,27 @@ void Configuration::registerMenuBuilder(MenuBuilder* menu, size_t count)
 void Configuration::registerMainMenuStringList(QList<QAction*>* menu)
 {
     NamedMenuBuilders.append(MenuMap(menu, menu->size() - 1));
+}
+
+void Configuration::zoomFont(const QString & fontName, QWheelEvent* event)
+{
+    QPoint numDegrees = event->angleDelta() / 8;
+    int ticks = numDegrees.y() / 15;
+    QFont myFont = Fonts[fontName];
+    char fontSizes[] = {6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 0}; // The list of font sizes in ApperanceDialog
+    char* currentFontSize = strchr(fontSizes, myFont.pointSize() & 127);
+    if(currentFontSize)
+    {
+        currentFontSize += ticks;
+        if(currentFontSize > fontSizes + 11)
+            currentFontSize = fontSizes + 11;
+        else if(currentFontSize < fontSizes)
+            currentFontSize = fontSizes;
+        myFont.setPointSize(*currentFontSize);
+        Fonts[fontName] = myFont;
+        writeFonts();
+        GuiUpdateAllViews();
+    }
 }
 
 static bool IsPointVisible(QPoint pos)

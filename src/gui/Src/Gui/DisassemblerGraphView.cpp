@@ -899,6 +899,10 @@ void DisassemblerGraphView::wheelEvent(QWheelEvent* event)
 
         event->accept();
     }
+    else if(event->modifiers() == Qt::ControlModifier)
+    {
+        Config()->zoomFont("Disassembly", event);
+    }
     else
     {
         QAbstractScrollArea::wheelEvent(event);
@@ -2179,20 +2183,19 @@ void DisassemblerGraphView::setupContextMenu()
     {
         return DbgIsDebugging() && this->ready;
     });
-
-    mMenuBuilder->addSeparator();
-
     mCommonActions = new CommonActions(this, getActionHelperFuncs(), [this]()
     {
         return zoomActionHelper();
     });
-    mCommonActions->build(mMenuBuilder, CommonActions::ActionBreakpoint | CommonActions::ActionMemoryMap | CommonActions::ActionBookmark | CommonActions::ActionLabel |
-                          CommonActions::ActionComment | CommonActions::ActionDisasm | CommonActions::ActionNewOrigin | CommonActions::ActionNewThread);
-
     auto zoomActionHelperNonZero = [this](QMenu*)
     {
         return zoomActionHelper() != 0;
     };
+    mMenuBuilder->addAction(makeShortcutAction(DIcon(ArchValue("processor32.png", "processor64.png")), tr("Follow in &Disassembler"), SLOT(followDisassemblySlot()), "ActionGraph"), zoomActionHelperNonZero);
+    mMenuBuilder->addSeparator();
+
+    mCommonActions->build(mMenuBuilder, CommonActions::ActionBreakpoint | CommonActions::ActionMemoryMap | CommonActions::ActionBookmark | CommonActions::ActionLabel |
+                          CommonActions::ActionComment | CommonActions::ActionNewOrigin | CommonActions::ActionNewThread);
 
     mMenuBuilder->addAction(makeShortcutAction(DIcon("xrefs.png"), tr("Xrefs..."), SLOT(xrefSlot()), "ActionXrefs"), zoomActionHelperNonZero);
 
@@ -2521,6 +2524,11 @@ void DisassemblerGraphView::xrefSlot()
         DbgCmdExec(QString("graph %1").arg(ToPtrString(addr)));
     });
     mXrefDlg->showNormal();
+}
+
+void DisassemblerGraphView::followDisassemblySlot()
+{
+    mCommonActions->followDisassemblySlot();
 }
 
 void DisassemblerGraphView::followActionSlot()

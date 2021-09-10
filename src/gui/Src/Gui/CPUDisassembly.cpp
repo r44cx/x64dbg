@@ -101,10 +101,19 @@ void CPUDisassembly::mouseDoubleClickEvent(QMouseEvent* event)
     // (Disassembly) Assemble dialog
     case 2:
     {
-        duint dest = DbgGetBranchDestination(rvaToVa(getInitialSelection()));
+        duint assembleOnDoubleClickInt;
+        bool assembleOnDoubleClick = (BridgeSettingGetUint("Disassembler", "AssembleOnDoubleClick", &assembleOnDoubleClickInt) && assembleOnDoubleClickInt);
+        if(assembleOnDoubleClick)
+        {
+            assembleSlot();
+        }
+        else
+        {
+            duint dest = DbgGetBranchDestination(rvaToVa(getInitialSelection()));
 
-        if(DbgMemIsValidReadPtr(dest))
-            gotoAddress(dest);
+            if(DbgMemIsValidReadPtr(dest))
+                gotoAddress(dest);
+        }
     }
     break;
 
@@ -632,7 +641,6 @@ void CPUDisassembly::setupRightClickContextMenu()
     mMenuBuilder->addMenu(makeMenu(DIcon("search-for.png"), tr("&Search for")), searchMenu);
 
     mReferenceSelectedAddressAction = makeShortcutAction(tr("&Selected Address(es)"), SLOT(findReferencesSlot()), "ActionFindReferencesToSelectedAddress");
-    mReferenceSelectedAddressAction->setFont(QFont("Courier New", 8));
 
     mMenuBuilder->addMenu(makeMenu(DIcon("find.png"), tr("Find &references to")), [this](QMenu * menu)
     {
@@ -1217,8 +1225,8 @@ void CPUDisassembly::findNamesSlot()
         auto base = DbgFunctions()->ModBaseFromAddr(rvaToVa(getInitialSelection()));
         if(!base)
             return;
-        Bridge::getBridge()->symbolSelectModule(base);
-        emit displaySymbolsWidget();
+
+        DbgCmdExec(QString("symfollow %1").arg(base));
     }
 }
 

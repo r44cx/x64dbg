@@ -283,7 +283,7 @@ static void ReadImportDirectory(MODINFO & Info, ULONG_PTR FileMapVA)
                 // Import by ordinal
                 entry.ordinal = THUNK_VAL(Info.headers, thunkData, u1.Ordinal) & 0xffff;
                 char buf[18];
-                sprintf_s(buf, "Ordinal%u", (ULONG)entry.ordinal);
+                sprintf_s(buf, "Ordinal#%u", (ULONG)entry.ordinal);
                 entry.name = String((const char*)buf);
             }
         }
@@ -463,7 +463,11 @@ static void ReadDebugDirectory(MODINFO & Info, ULONG_PTR FileMapVA)
     const auto supported = [&Info](PIMAGE_DEBUG_DIRECTORY entry)
     {
         // Check for valid RVA
-        const auto offset = ModRvaToOffset(0, Info.headers, entry->AddressOfRawData);
+        ULONG_PTR offset = 0;
+        if(entry->AddressOfRawData)
+            offset = (ULONG_PTR)ModRvaToOffset(0, Info.headers, entry->AddressOfRawData);
+        else if(entry->PointerToRawData)
+            offset = entry->PointerToRawData;
         if(!offset)
             return false;
 
@@ -556,7 +560,12 @@ static void ReadDebugDirectory(MODINFO & Info, ULONG_PTR FileMapVA)
     }
 
     // At this point we know the entry is a valid CV one
-    auto cvData = (unsigned char*)(FileMapVA + ModRvaToOffset(0, Info.headers, entry->AddressOfRawData));
+    ULONG_PTR offset = 0;
+    if(entry->AddressOfRawData)
+        offset = (ULONG_PTR)ModRvaToOffset(0, Info.headers, entry->AddressOfRawData);
+    else if(entry->PointerToRawData)
+        offset = entry->PointerToRawData;
+    auto cvData = (unsigned char*)(FileMapVA + offset);
     auto signature = *(DWORD*)cvData;
     if(signature == '01BN')
     {

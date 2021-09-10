@@ -110,6 +110,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(Bridge::getBridge(), SIGNAL(addFavouriteItem(int, QString, QString)), this, SLOT(addFavouriteItem(int, QString, QString)));
     connect(Bridge::getBridge(), SIGNAL(setFavouriteItemShortcut(int, QString, QString)), this, SLOT(setFavouriteItemShortcut(int, QString, QString)));
     connect(Bridge::getBridge(), SIGNAL(selectInMemoryMap(duint)), this, SLOT(displayMemMapWidget()));
+    connect(Bridge::getBridge(), SIGNAL(symbolSelectModule(duint)), this, SLOT(displaySymbolWidget()));
     connect(Bridge::getBridge(), SIGNAL(closeApplication()), this, SLOT(close()));
 
     // Setup menu API
@@ -345,6 +346,10 @@ MainWindow::MainWindow(QWidget* parent)
     connect(ui->actionSetInitializationScript, SIGNAL(triggered()), this, SLOT(setInitializationScript()));
     connect(ui->actionCustomizeMenus, SIGNAL(triggered()), this, SLOT(customizeMenu()));
     connect(ui->actionVariables, SIGNAL(triggered()), this, SLOT(displayVariables()));
+    makeCommandAction(ui->actionDbsave, "dbsave");
+    makeCommandAction(ui->actionDbload, "dbload");
+    makeCommandAction(ui->actionDbrecovery, "dbload bak");
+    makeCommandAction(ui->actionDbclear, "dbclear");
 
     connect(mCpuWidget->getDisasmWidget(), SIGNAL(updateWindowTitle(QString)), this, SLOT(updateWindowTitleSlot(QString)));
     connect(mCpuWidget->getDisasmWidget(), SIGNAL(displayReferencesWidget()), this, SLOT(displayReferencesWidget()));
@@ -390,6 +395,8 @@ MainWindow::MainWindow(QWidget* parent)
     mCpuWidget->setDisasmFocus();
 
     QTimer::singleShot(0, this, SLOT(loadWindowSettings()));
+
+    updateDarkTitleBar();
 }
 
 MainWindow::~MainWindow()
@@ -514,6 +521,7 @@ void MainWindow::themeTriggeredSlot()
     QString name = dir.mid(nameIdx + 1);
     BridgeSettingSet("Theme", "Selected", name.toUtf8().constData());
     loadSelectedStyle();
+    updateDarkTitleBar();
 }
 
 void MainWindow::setupThemesMenu()
@@ -728,6 +736,10 @@ void MainWindow::clearTabWidget()
 
 void MainWindow::saveWindowSettings()
 {
+    // Save favourite toolbar
+    BridgeSettingSetUint("Main Window Settings", "FavToolbarVisible", mFavouriteToolbar->isVisible() ? 1 : 0);
+    removeToolBar(mFavouriteToolbar); //Remove it before saving main window settings, otherwise it crashes
+
     // Main Window settings
     BridgeSettingSet("Main Window Settings", "Geometry", saveGeometry().toBase64().data());
     BridgeSettingSet("Main Window Settings", "State", saveState().toBase64().data());
@@ -746,11 +758,6 @@ void MainWindow::saveWindowSettings()
             BridgeSettingSet("Tab Window Settings", mWidgetList[i].nativeName.toUtf8().constData(),
                              mWidgetList[i].widget->parentWidget()->saveGeometry().toBase64().data());
     }
-
-    // Save favourite toolbar
-    BridgeSettingSetUint("Main Window Settings", "FavToolbarPositionX", mFavouriteToolbar->x());
-    BridgeSettingSetUint("Main Window Settings", "FavToolbarPositionY", mFavouriteToolbar->y());
-    BridgeSettingSetUint("Main Window Settings", "FavToolbarVisible", mFavouriteToolbar->isVisible() ? 1 : 0);
 
     mCpuWidget->saveWindowSettings();
     mSymbolView->saveWindowSettings();
@@ -797,11 +804,9 @@ void MainWindow::loadWindowSettings()
     }
 
     // Load favourite toolbar
-    duint posx = 0, posy = 0, isVisible = 0;
-    BridgeSettingGetUint("Main Window Settings", "FavToolbarPositionX", &posx);
-    BridgeSettingGetUint("Main Window Settings", "FavToolbarPositionY", &posy);
+    duint isVisible = 0;
     BridgeSettingGetUint("Main Window Settings", "FavToolbarVisible", &isVisible);
-    mFavouriteToolbar->move(posx, posy);
+    addToolBar(mFavouriteToolbar);
     mFavouriteToolbar->setVisible(isVisible == 1);
 
     mCpuWidget->loadWindowSettings();
@@ -819,6 +824,10 @@ void MainWindow::refreshShortcuts()
     setGlobalShortcut(ui->actionOpen, ConfigShortcut("FileOpen"));
     setGlobalShortcut(ui->actionAttach, ConfigShortcut("FileAttach"));
     setGlobalShortcut(ui->actionDetach, ConfigShortcut("FileDetach"));
+    setGlobalShortcut(ui->actionDbload, ConfigShortcut("FileDbload"));
+    setGlobalShortcut(ui->actionDbsave, ConfigShortcut("FileDbsave"));
+    setGlobalShortcut(ui->actionDbclear, ConfigShortcut("FileDbclear"));
+    setGlobalShortcut(ui->actionDbrecovery, ConfigShortcut("FileDbrecovery"));
     setGlobalShortcut(ui->actionImportdatabase, ConfigShortcut("FileImportDatabase"));
     setGlobalShortcut(ui->actionExportdatabase, ConfigShortcut("FileExportDatabase"));
     setGlobalShortcut(ui->actionRestartAdmin, ConfigShortcut("FileRestartAdmin"));
@@ -1082,6 +1091,34 @@ void MainWindow::updateWindowTitleSlot(QString filename)
     else
     {
         setWindowTitle(mWindowMainTitle);
+    }
+}
+
+void MainWindow::updateDarkTitleBar()
+{
+    // https://www.vergiliusproject.com/kernels/x64/Windows%2010%20%7C%202016/2009%2020H2%20(October%202020%20Update)/_KUSER_SHARED_DATA
+    uint32_t NtBuildNumber = *(uint32_t*)(0x7FFE0000 + 0x260);
+
+    if(NtBuildNumber == 0 /* pre Windows-10 */ || NtBuildNumber < 17763)
+        return;
+
+    duint darkTitleBar = 0;
+    BridgeSettingGetUint("Colors", "DarkTitleBar", &darkTitleBar);
+
+    static auto hdwmapi = LoadLibraryW(L"dwmapi.dll");
+    if(hdwmapi)
+    {
+        typedef int(WINAPI * DWMSETWINDOWATTRIBUTE)(HWND hwnd, DWORD dwAttribute, LPCVOID pvAttribute, DWORD cbAttribute);
+        static auto DwmSetWindowAttribute = (DWMSETWINDOWATTRIBUTE)GetProcAddress(hdwmapi, "DwmSetWindowAttribute");
+        auto hwnd = (HWND)this->winId();
+        DwmSetWindowAttribute(hwnd, (NtBuildNumber >= 18985) ? 20 : 19, &darkTitleBar, sizeof(uint32_t));
+
+        // HACK: Create a 1x1 pixel frameless window on top of the title bar to force Windows to redraw it
+        auto w = new QWidget(nullptr, Qt::FramelessWindowHint);
+        w->resize(1, 1);
+        w->move(this->pos());
+        w->show();
+        delete w;
     }
 }
 
@@ -1549,7 +1586,15 @@ void MainWindow::setNameMenu(int hMenu, QString name)
 void MainWindow::runSelection()
 {
     if(DbgIsDebugging())
-        DbgCmdExec(("run " + ToPtrString(mCpuWidget->getSelectionVa())));
+    {
+        duint addr = 0;
+        if(mTabWidget->currentWidget() == mCpuWidget || (mCpuWidget->window() != this && mCpuWidget->isActiveWindow()))
+            addr = mCpuWidget->getSelectionVa();
+        else if(mTabWidget->currentWidget() == mCallStackView || (mCallStackView->window() != this && mCallStackView->isActiveWindow()))
+            addr = mCallStackView->getSelectionVa();
+        if(addr)
+            DbgCmdExec("run " + ToPtrString(addr));
+    }
 }
 
 void MainWindow::runExpression()
@@ -1581,7 +1626,7 @@ void MainWindow::patchWindow()
 {
     if(!DbgIsDebugging())
     {
-        SimpleErrorBox(this, tr("Error!"), tr("Patches cannot be shown when not debugging..."));
+        SimpleErrorBox(this, tr("Error!"), tr("Patches can only be shown while debugging..."));
         return;
     }
     GuiUpdatePatches();
@@ -2196,7 +2241,7 @@ void MainWindow::on_actionImportdatabase_triggered()
 {
     if(!DbgIsDebugging())
         return;
-    auto filename = QFileDialog::getOpenFileName(this, tr("Import database"), QString(), tr("Databases (%1);;All files (*.*)").arg(ArchValue("*.dd32", "*.dd64")));
+    auto filename = QFileDialog::getOpenFileName(this, tr("Import database"), QString(), tr("Databases (%1);;Database backup (%1.bak);;All files (*.*)").arg(ArchValue("*.dd32", "*.dd64")));
     if(!filename.length())
         return;
     DbgCmdExec(QString("dbload \"%1\"").arg(QDir::toNativeSeparators(filename)));
@@ -2317,11 +2362,13 @@ void MainWindow::on_actionDefaultTheme_triggered()
     // Reset [Colors] to default
     Config()->Colors = Config()->defaultColors;
     Config()->writeColors();
+    BridgeSettingSetUint("Colors", "DarkTitleBar", 0);
     // Reset [Fonts] to default
     //Config()->Fonts = Config()->defaultFonts;
     //Config()->writeFonts();
     // Remove custom colors
     BridgeSettingSet("Colors", "CustomColorCount", nullptr);
+    updateDarkTitleBar();
 }
 
 void MainWindow::updateStyle()
