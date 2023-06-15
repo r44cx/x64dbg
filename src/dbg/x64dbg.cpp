@@ -121,6 +121,8 @@ static void registercommands()
     dbgcmdnew("eStepOut,ertr", cbDebugeStepOut, true); //rtr + skip first chance exceptions
     dbgcmdnew("skip", cbDebugSkip, true); //skip one instruction
     dbgcmdnew("InstrUndo", cbInstrInstrUndo, true); //Instruction undo
+    dbgcmdnew("StepUser,StepUserInto", cbDebugStepUserInto, true); // step into until reaching user code
+    dbgcmdnew("StepSystem,StepUserInto", cbDebugStepSystemInto, true); // step into until reaching system code
 
     //breakpoint control
     dbgcmdnew("SetBPX,bp,bpx", cbDebugSetBPX, true); //breakpoint
@@ -211,18 +213,17 @@ static void registercommands()
     //tracing
     dbgcmdnew("TraceIntoConditional,ticnd", cbDebugTraceIntoConditional, true); //Trace into conditional
     dbgcmdnew("TraceOverConditional,tocnd", cbDebugTraceOverConditional, true); //Trace over conditional
-    dbgcmdnew("TraceIntoBeyondTraceRecord,tibt", cbDebugTraceIntoBeyondTraceRecord, true); //Trace into beyond trace record
-    dbgcmdnew("TraceOverBeyondTraceRecord,tobt", cbDebugTraceOverBeyondTraceRecord, true); //Trace over beyond trace record
-    dbgcmdnew("TraceIntoIntoTraceRecord,tiit", cbDebugTraceIntoIntoTraceRecord, true); //Trace into into trace record
-    dbgcmdnew("TraceOverIntoTraceRecord,toit", cbDebugTraceOverIntoTraceRecord, true); //Trace over into trace record
+    dbgcmdnew("TraceIntoBeyondTraceCoverage,TraceIntoBeyondTraceRecord,tibt", cbDebugTraceIntoBeyondTraceRecord, true); //Trace into beyond trace record
+    dbgcmdnew("TraceOverBeyondTraceCoverage,TraceOverBeyondTraceRecord,tobt", cbDebugTraceOverBeyondTraceRecord, true); //Trace over beyond trace record
+    dbgcmdnew("TraceIntoIntoTraceCoverage,TraceIntoIntoTraceRecord,tiit", cbDebugTraceIntoIntoTraceRecord, true); //Trace into into trace record
+    dbgcmdnew("TraceOverIntoTraceCoverage,TraceOverIntoTraceRecord,toit", cbDebugTraceOverIntoTraceRecord, true); //Trace over into trace record
     dbgcmdnew("RunToParty", cbDebugRunToParty, true); //Run to code in a party
     dbgcmdnew("RunToUserCode,rtu", cbDebugRunToUserCode, true); //Run to user code
     dbgcmdnew("TraceSetLog,SetTraceLog", cbDebugTraceSetLog, true); //Set trace log text + condition
     dbgcmdnew("TraceSetCommand,SetTraceCommand", cbDebugTraceSetCommand, true); //Set trace command text + condition
-    dbgcmdnew("TraceSetSwitchCondition,SetTraceSwitchCondition", cbDebugTraceSetSwitchCondition, true); //Set trace switch condition
     dbgcmdnew("TraceSetLogFile,SetTraceLogFile", cbDebugTraceSetLogFile, true); //Set trace log file
-    dbgcmdnew("StartRunTrace,opentrace", cbDebugStartRunTrace, true); //start run trace (Ollyscript command "opentrace" "opens run trace window")
-    dbgcmdnew("StopRunTrace,tc", cbDebugStopRunTrace, true); //stop run trace (and Ollyscript command)
+    dbgcmdnew("StartTraceRecording,StartRunTrace,opentrace", cbDebugStartTraceRecording, true); //start run trace (Ollyscript command "opentrace" "opens run trace window")
+    dbgcmdnew("StopTraceRecording,StopRunTrace,tc", cbDebugStopTraceRecording, true); //stop run trace (and Ollyscript command)
 
     //thread control
     dbgcmdnew("createthread,threadcreate,newthread,threadnew", cbDebugCreatethread, true); //create thread
@@ -243,6 +244,7 @@ static void registercommands()
     dbgcmdnew("getpagerights,getrightspage", cbDebugGetPageRights, true);
     dbgcmdnew("setpagerights,setrightspage", cbDebugSetPageRights, true);
     dbgcmdnew("savedata", cbInstrSavedata, true); //save data to disk
+    dbgcmdnew("minidump", cbInstrMinidump, true); //create a minidump
 
     //operating system control
     dbgcmdnew("GetPrivilegeState", cbGetPrivilegeState, true); //get priv state
@@ -382,6 +384,7 @@ static void registercommands()
     dbgcmdnew("msg", cbScriptMsg, false);
     dbgcmdnew("msgyn", cbScriptMsgyn, false);
     dbgcmdnew("log", cbInstrLog, false); //log command with superawesome hax
+    dbgcmdnew("htmllog", cbInstrHtmlLog, false); //command for testing
     dbgcmdnew("scriptdll,dllscript", cbScriptDll, false); //execute a script DLL
     dbgcmdnew("scriptcmd", cbScriptCmd, false); // execute a script command TODO: undocumented
 
@@ -407,6 +410,7 @@ static void registercommands()
     dbgcmdnew("guiupdatetitle", cbDebugUpdateTitle, true); // set relevant disassembly title
     dbgcmdnew("showref", cbShowReferences, false); // show references window
     dbgcmdnew("symfollow", cbSymbolsFollow, false); // follow address in symbols tab
+    dbgcmdnew("gototrace,tracegoto", cbGotoTrace, false); // goto index in trace tab
 
     //misc
     dbgcmdnew("chd", cbInstrChd, false); //Change directory
@@ -449,6 +453,7 @@ static void registercommands()
     dbgcmdnew("dbdecompress", cbInstrDbdecompress, false); //Decompress a database.
     dbgcmdnew("DebugFlags", cbInstrDebugFlags, false); //Set ntdll LdrpDebugFlags
     dbgcmdnew("LabelRuntimeFunctions", cbInstrLabelRuntimeFunctions, true); //Label exception directory entries
+    dbgcmdnew("cmdtest", cbInstrCmdTest, false); //log argv verbatim
 };
 
 bool cbCommandProvider(char* cmd, int maxlen)
@@ -515,7 +520,7 @@ static DWORD WINAPI DbgScriptDllExecThread(void* a)
         dputs(QT_TRANSLATE_NOOP("DBG", "success!\n"));
     else
     {
-        String error = stringformatinline(StringUtils::sprintf("{winerror@%d}", GetLastError()));
+        String error = stringformatinline(StringUtils::sprintf("{winerror@%x}", GetLastError()));
         dprintf(QT_TRANSLATE_NOOP("DBG", "failure (%s)...\n"), error.c_str());
     }
 
@@ -552,7 +557,7 @@ static bool DbgScriptDllExec(const char* dll)
             }
             else
             {
-                String error = stringformatinline(StringUtils::sprintf("{winerror@%d}", GetLastError()));
+                String error = stringformatinline(StringUtils::sprintf("{winerror@%x}", GetLastError()));
                 dprintf(QT_TRANSLATE_NOOP("DBG", "[Script DLL] Failed to find the exports \"AsyncStart\" or \"Start\" (%s)!\n"), error.c_str());
             }
 
@@ -561,14 +566,14 @@ static bool DbgScriptDllExec(const char* dll)
                 dputs(QT_TRANSLATE_NOOP("DBG", "success!\n"));
             else
             {
-                String error = stringformatinline(StringUtils::sprintf("{winerror@%d}", GetLastError()));
+                String error = stringformatinline(StringUtils::sprintf("{winerror@%x}", GetLastError()));
                 dprintf(QT_TRANSLATE_NOOP("DBG", "failure (%s)...\n"), error.c_str());
             }
         }
     }
     else
     {
-        String error = stringformatinline(StringUtils::sprintf("{winerror@%d}", GetLastError()));
+        String error = stringformatinline(StringUtils::sprintf("{winerror@%x}", GetLastError()));
         dprintf(QT_TRANSLATE_NOOP("DBG", "[Script DLL] LoadLibary failed (%s)!\n"), error.c_str());
     }
 
@@ -618,7 +623,7 @@ static DWORD WINAPI loadDbThread(LPVOID hEvent)
 
     // Load global notes
     dputs(QT_TRANSLATE_NOOP("DBG", "Reading notes file..."));
-    notesFile = String(szProgramDir) + "\\notes.txt";
+    notesFile = String(szUserDir) + "\\notes.txt";
     String text;
     if(!FileExists(notesFile.c_str()) || FileHelper::ReadAllText(notesFile, text))
         GuiSetGlobalNotes(text.c_str());
@@ -637,56 +642,8 @@ static WString escape(WString cmdline)
     return cmdline;
 }
 
-#include <delayimp.h>
-
-// https://devblogs.microsoft.com/oldnewthing/20170126-00/?p=95265
-static FARPROC WINAPI delayHook(unsigned dliNotify, PDelayLoadInfo pdli)
-{
-    if(dliNotify == dliNotePreLoadLibrary && _stricmp(pdli->szDll, "TitanEngine.dll") == 0)
-    {
-        String fullPath = szProgramDir;
-        fullPath += '\\';
-
-        switch(DbgGetDebugEngine())
-        {
-        case DebugEngineGleeBug:
-            fullPath += "GleeBug\\TitanEngine.dll";
-            break;
-        case DebugEngineStaticEngine:
-            fullPath += "StaticEngine\\TitanEngine.dll";
-            break;
-        case DebugEngineTitanEngine:
-        default:
-            return 0;
-        }
-
-        auto hModule = LoadLibraryW(StringUtils::Utf8ToUtf16(fullPath).c_str());
-        if(hModule)
-        {
-            dprintf(QT_TRANSLATE_NOOP("DBG", "Successfully loaded %s!\n"), fullPath.c_str());
-        }
-        else
-        {
-            dprintf(QT_TRANSLATE_NOOP("DBG", "Failed to load %s, falling back to regular TitanEngine.dll"), fullPath.c_str());
-        }
-        return (FARPROC)hModule;
-    }
-
-    return 0;
-}
-
-// Visual Studio 2015 Update 3 made this const per default
-// https://dev.to/yumetodo/list-of-mscver-and-mscfullver-8nd
-#if _MSC_FULL_VER >= 190024210
-const
-#endif // _MSC_FULL_VER
-PfnDliHook __pfnDliNotifyHook2 = delayHook;
-
 extern "C" DLL_EXPORT const char* _dbg_dbginit()
 {
-    if(!*szProgramDir)
-        return "GetModuleFileNameW failed!";
-
     if(!EngineCheckStructAlignment(UE_STRUCT_TITAN_ENGINE_CONTEXT, sizeof(TITAN_ENGINE_CONTEXT_t)))
         return "Invalid TITAN_ENGINE_CONTEXT_t alignment!";
 
@@ -696,7 +653,7 @@ extern "C" DLL_EXPORT const char* _dbg_dbginit()
     strcat_s(szDllLoaderPath, "\\loaddll.exe");
 
 #ifdef ENABLE_MEM_TRACE
-    strcpy_s(alloctrace, szProgramDir);
+    strcpy_s(alloctrace, szUserDir);
     strcat_s(alloctrace, "\\alloctrace.txt");
     DeleteFileW(StringUtils::Utf8ToUtf16(alloctrace).c_str());
     setalloctrace(alloctrace);
@@ -717,7 +674,7 @@ extern "C" DLL_EXPORT const char* _dbg_dbginit()
     Zydis::GlobalInitialize();
     dputs(QT_TRANSLATE_NOOP("DBG", "Getting directory information..."));
 
-    strcpy_s(scriptDllDir, szProgramDir);
+    strcpy_s(scriptDllDir, szUserDir);
     strcat_s(scriptDllDir, "\\scripts\\");
     initDataInstMap();
 
@@ -731,10 +688,10 @@ extern "C" DLL_EXPORT const char* _dbg_dbginit()
     }
 
     // Create database directory in the local debugger folder
-    DbSetPath(StringUtils::sprintf("%s\\db", szProgramDir).c_str(), nullptr);
+    DbSetPath(StringUtils::sprintf("%s\\db", szUserDir).c_str(), nullptr);
 
     char szLocalSymbolPath[MAX_PATH] = "";
-    strcpy_s(szLocalSymbolPath, szProgramDir);
+    strcpy_s(szLocalSymbolPath, szUserDir);
     strcat_s(szLocalSymbolPath, "\\symbols");
 
     Memory<char*> cachePath(MAX_SETTING_SIZE + 1);
@@ -747,7 +704,7 @@ extern "C" DLL_EXPORT const char* _dbg_dbginit()
     {
         if(_strnicmp(cachePath(), ".\\", 2) == 0)
         {
-            strncpy_s(szSymbolCachePath, szProgramDir, _TRUNCATE);
+            strncpy_s(szSymbolCachePath, szUserDir, _TRUNCATE);
             strncat_s(szSymbolCachePath, cachePath() + 1, _TRUNCATE);
         }
         else
@@ -802,7 +759,7 @@ extern "C" DLL_EXPORT const char* _dbg_dbginit()
     strcpy_s(plugindir, szProgramDir);
     strcat_s(plugindir, "\\plugins");
     CreateDirectoryW(StringUtils::Utf8ToUtf16(plugindir).c_str(), nullptr);
-    CreateDirectoryW(StringUtils::Utf8ToUtf16(StringUtils::sprintf("%s\\memdumps", szProgramDir)).c_str(), nullptr);
+    CreateDirectoryW(StringUtils::Utf8ToUtf16(StringUtils::sprintf("%s\\memdumps", szUserDir)).c_str(), nullptr);
     dputs(QT_TRANSLATE_NOOP("DBG", "Initialization successful!"));
     bIsStopped = false;
     dputs(QT_TRANSLATE_NOOP("DBG", "Loading plugins..."));

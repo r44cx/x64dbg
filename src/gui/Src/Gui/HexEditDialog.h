@@ -1,5 +1,4 @@
-#ifndef HEXEDITDIALOG_H
-#define HEXEDITDIALOG_H
+#pragma once
 
 #include <QDialog>
 #include "QHexEdit/QHexEdit.h"
@@ -25,6 +24,13 @@ public:
     bool entireBlock();
 
     QHexEdit* mHexEdit;
+
+    struct FormatType
+    {
+        QString name;
+        int itemsPerLine;
+        QString linePrefix;
+    };
 
 private slots:
     void updateStyle();
@@ -95,15 +101,7 @@ private:
         DataLast
     };
 
-    struct FormatType
-    {
-        QString name;
-        int itemsPerLine;
-    };
-
     FormatType mTypes[DataLast];
 
     void printData(DataType type);
 };
-
-#endif // HEXEDITDIALOG_H

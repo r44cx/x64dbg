@@ -162,7 +162,7 @@ bool cbInstrVirtualmod(int argc, char* argv[])
         return false;
     }
 
-    char modname[256] = "";
+    char modname[MAX_MODULE_SIZE] = "";
     if(ModNameFromAddr(base, modname, true))
         BpEnumAll(cbSetModuleBreakpoints, modname);
 
@@ -395,11 +395,7 @@ static void printExhandlers(const char* name, const std::vector<duint> & entries
     dprintf("%s:\n", name);
     for(auto entry : entries)
     {
-        auto symbolic = SymGetSymbolicName(entry);
-        if(symbolic.length())
-            dprintf_untranslated("%p %s\n", entry, symbolic.c_str());
-        else
-            dprintf_untranslated("%p\n", entry);
+        dputs_untranslated(SymGetSymbolicName(entry).c_str());
     }
 }
 
@@ -467,20 +463,12 @@ bool cbInstrExinfo(int argc, char* argv[])
     else
         dprintf_untranslated("           ExceptionCode: %08X\n", record.ExceptionCode);
     dprintf_untranslated("          ExceptionFlags: %08X\n", record.ExceptionFlags);
-    auto symbolic = SymGetSymbolicName(duint(record.ExceptionAddress));
-    if(symbolic.length())
-        dprintf_untranslated("        ExceptionAddress: %p %s\n", record.ExceptionAddress, symbolic.c_str());
-    else
-        dprintf_untranslated("        ExceptionAddress: %p\n", record.ExceptionAddress);
+    dprintf_untranslated("        ExceptionAddress: %s\n", SymGetSymbolicName(duint(record.ExceptionAddress)).c_str());
     dprintf_untranslated("        NumberParameters: %u\n", record.NumberParameters);
     if(record.NumberParameters)
         for(DWORD i = 0; i < record.NumberParameters; i++)
         {
-            symbolic = SymGetSymbolicName(duint(record.ExceptionInformation[i]));
-            if(symbolic.length())
-                dprintf_untranslated("ExceptionInformation[%02u]: %p %s", i, record.ExceptionInformation[i], symbolic.c_str());
-            else
-                dprintf_untranslated("ExceptionInformation[%02u]: %p", i, record.ExceptionInformation[i]);
+            dprintf_untranslated("ExceptionInformation[%02u]: %s", i, SymGetSymbolicName(duint(record.ExceptionInformation[i])).c_str());
             //https://msdn.microsoft.com/en-us/library/windows/desktop/aa363082(v=vs.85).aspx
             if(record.ExceptionCode == EXCEPTION_ACCESS_VIOLATION ||
                     record.ExceptionCode == EXCEPTION_IN_PAGE_ERROR ||
@@ -512,6 +500,6 @@ bool cbInstrTraceexecute(int argc, char* argv[])
     duint addr;
     if(!valfromstring(argv[1], &addr, false))
         return false;
-    _dbg_dbgtraceexecute(addr);
+    dbgtraceexecute(addr);
     return true;
 }

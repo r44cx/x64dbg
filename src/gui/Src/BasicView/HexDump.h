@@ -1,5 +1,4 @@
-#ifndef _HEXDUMP_H
-#define _HEXDUMP_H
+#pragma once
 
 #include "AbstractTableView.h"
 #include "RichTextPainter.h"
@@ -109,7 +108,7 @@ public:
 
     virtual void getColumnRichText(int col, dsint rva, RichTextPainter::List & richText);
 
-    static int getSizeOf(DataSize size);
+    static size_t getSizeOf(DataSize size);
 
     void toString(DataDescriptor desc, duint rva, byte_t* data, RichTextPainter::CustomRichText_t & richText);
 
@@ -224,5 +223,3 @@ protected:
     duint mUnderlineRangeStartVa = 0;
     duint mUnderlineRangeEndVa = 0;
 };
-
-#endif // _HEXDUMP_H

@@ -108,6 +108,9 @@
     <Filter Include="Source Files\Third Party\msdia">
       <UniqueIdentifier>{dc4f0ea0-8d28-4d9e-a8ac-901dd274787d}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\Third Party\LLVMDemangle">
+      <UniqueIdentifier>{62118289-8fde-487b-b0db-0164e34ce3b4}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -436,9 +439,6 @@
     </ClCompile>
     <ClCompile Include="formatfunctions.cpp">
       <Filter>Source Files\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="symcache.cpp">
-      <Filter>Source Files\Symbols</Filter>
     </ClCompile>
     <ClCompile Include="symbolinfo.cpp">
       <Filter>Source Files\Symbols</Filter>
@@ -874,9 +874,6 @@
     <ClInclude Include="symbolsourcebase.h">
       <Filter>Header Files\Symbols</Filter>
     </ClInclude>
-    <ClInclude Include="symcache.h">
-      <Filter>Header Files\Symbols</Filter>
-    </ClInclude>
     <ClInclude Include="symbolinfo.h">
       <Filter>Header Files\Symbols</Filter>
     </ClInclude>
@@ -897,6 +894,9 @@
     </ClInclude>
     <ClInclude Include="syscalls.h">
       <Filter>Header Files\Information</Filter>
+    </ClInclude>
+    <ClInclude Include="LLVMDemangle\LLVMDemangle.h">
+      <Filter>Header Files\Third Party\LLVMDemangle</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

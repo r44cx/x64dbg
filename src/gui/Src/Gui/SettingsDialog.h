@@ -1,5 +1,4 @@
-#ifndef SETTINGSDIALOG_H
-#define SETTINGSDIALOG_H
+#pragma once
 
 #include <QDialog>
 #include <QListWidgetItem>
@@ -43,6 +42,7 @@ private slots:
     void on_chkDllUnloadSystem_stateChanged(int arg1);
     void on_chkThreadStart_stateChanged(int arg1);
     void on_chkThreadEnd_stateChanged(int arg1);
+    void on_chkThreadNameSet_stateChanged(int arg1);
     void on_chkDebugStrings_stateChanged(int arg1);
     //Engine tab
     void on_radioUnsigned_clicked();
@@ -57,19 +57,20 @@ private slots:
     void on_chkEnableSourceDebugging_stateChanged(int arg1);
     void on_chkDisableDatabaseCompression_stateChanged(int arg1);
     void on_chkSaveDatabaseInProgramDirectory_stateChanged(int arg1);
-    void on_chkTraceRecordEnabledDuringTrace_stateChanged(int arg1);
     void on_chkSkipInt3Stepping_toggled(bool checked);
     void on_chkNoScriptTimeout_stateChanged(int arg1);
     void on_chkIgnoreInconsistentBreakpoints_toggled(bool checked);
     void on_chkHardcoreThreadSwitchWarning_toggled(bool checked);
     void on_chkVerboseExceptionLogging_toggled(bool checked);
     void on_chkNoWow64SingleStepWorkaround_toggled(bool checked);
+    void on_chkDisableAslr_toggled(bool checked);
     void on_spinMaxTraceCount_valueChanged(int arg1);
     void on_spinAnimateInterval_valueChanged(int arg1);
     //Exception tab
     void on_btnIgnoreRange_clicked();
     void on_btnDeleteRange_clicked();
     void on_btnIgnoreLast_clicked();
+    void on_btnIgnoreFirst_clicked();
     void on_listExceptions_currentItemChanged(QListWidgetItem* current, QListWidgetItem* previous);
     void on_listExceptions_itemClicked(QListWidgetItem* item);
     void on_radioFirstChance_clicked();
@@ -108,7 +109,6 @@ private slots:
     void on_chkHideSeasonalIcons_toggled(bool checked);
     //Misc tab
     void on_chkSetJIT_stateChanged(int arg1);
-    void on_chkConfirmBeforeAtt_stateChanged(int arg1);
     void on_editSymbolStore_textEdited(const QString & arg1);
     void on_editSymbolCache_textEdited(const QString & arg1);
     void on_chkUtf16LogRedirect_toggled(bool checked);
@@ -118,6 +118,9 @@ private slots:
     void on_chkQueryProcessCookie_toggled(bool checked);
     void on_chkQueryWorkingSet_toggled(bool checked);
     void on_chkTransparentExceptionStepping_toggled(bool checked);
+
+    void on_chkQtHighDpiScaling_toggled(bool checked);
+    void on_chkWindowLongPath_toggled(bool checked);
 
 private:
     //enums
@@ -187,6 +190,7 @@ private:
         bool eventDllUnloadSystem;
         bool eventThreadStart;
         bool eventThreadEnd;
+        bool eventThreadNameSet;
         bool eventDebugStrings;
         //Engine Tab
         CalcType engineCalcType;
@@ -197,13 +201,13 @@ private:
         bool engineEnableSourceDebugging;
         bool engineSaveDatabaseInProgramDirectory;
         bool engineDisableDatabaseCompression;
-        bool engineEnableTraceRecordDuringTrace;
         bool engineSkipInt3Stepping;
         bool engineNoScriptTimeout;
         bool engineIgnoreInconsistentBreakpoints;
         bool engineHardcoreThreadSwitchWarning;
         bool engineVerboseExceptionLogging;
         bool engineNoWow64SingleStepWorkaround;
+        bool engineDisableAslr;
         int engineMaxTraceCount;
         int engineAnimateInterval;
         //Exception Tab
@@ -238,9 +242,10 @@ private:
         bool guiDisableAutoComplete;
         bool guiAutoFollowInStack;
         bool guiHideSeasonalIcons;
+        bool guiEnableQtHighDpiScaling;
+        bool guiEnableWindowLongPath;
         //Misc Tab
         bool miscSetJIT;
-        bool miscSetJITAuto;
         bool miscSymbolStore;
         bool miscSymbolCache;
         bool miscUtf16LogRedirect;
@@ -256,7 +261,6 @@ private:
     QList<ExceptionFilter> realExceptionFilters;
     std::unordered_map<duint, const char*> exceptionNames;
     bool bJitOld;
-    bool bJitAutoOld;
     bool bGuiOptionsUpdated;
     bool bTokenizerConfigUpdated;
     bool bDisableAutoCompleteUpdated;
@@ -270,5 +274,3 @@ private:
     void OnCurrentExceptionFilterSettingsChanged();
     void UpdateExceptionListWidget();
 };
-
-#endif // SETTINGSDIALOG_H

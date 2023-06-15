@@ -60,6 +60,10 @@ Command::Command(const String & command)
             case '\"':
                 state = Default;
                 break;
+            case '{':
+                state = StringFormat;
+                dataAppend(ch);
+                break;
             default:
                 dataAppend(ch);
                 break;
@@ -71,6 +75,12 @@ Command::Command(const String & command)
             case '\"':
                 dataAppend(ch);
                 break;
+            case '{':
+                dataAppend(ch);
+                break;
+            case '\\':
+                dataAppend(ch);
+                break;
             default:
                 dataAppend('\\');
                 dataAppend(ch);
@@ -78,6 +88,55 @@ Command::Command(const String & command)
             }
             state = Text;
             break;
+        case StringFormat:
+        {
+            auto nextch = i + 1 < len ? command[i + 1] : '\0';
+            switch(ch)
+            {
+            case '{':
+                if(nextch == '{')
+                {
+                    dataAppend(ch);
+                    dataAppend(nextch);
+                    i++;
+                }
+                else
+                {
+                    dataAppend(ch);
+                }
+                break;
+            case '}':
+                if(nextch == '}')
+                {
+                    dataAppend(ch);
+                    dataAppend(nextch);
+                    i++;
+                }
+                else
+                {
+                    dataAppend(ch);
+                    state = Text;
+                }
+                break;
+            case '\\':
+                switch(nextch)
+                {
+                case '\"':
+                case '\\':
+                    dataAppend(nextch);
+                    i++;
+                    break;
+                default:
+                    dataAppend(ch);
+                    break;
+                }
+                break;
+            default:
+                dataAppend(ch);
+                break;
+            }
+        }
+        break;
         }
     }
     if(state == Escaped || state == TextEscaped)

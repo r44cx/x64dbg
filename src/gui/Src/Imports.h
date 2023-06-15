@@ -1,5 +1,4 @@
-#ifndef IMPORTS_H
-#define IMPORTS_H
+#pragma once
 
 #ifndef _BRIDGEMAIN_H_
 #include "bridge/bridgemain.h"
@@ -14,7 +13,5 @@
 // Convenience overloads
 class QString;
 
-void DbgCmdExec(const QString & cmd);
+bool DbgCmdExec(const QString & cmd);
 bool DbgCmdExecDirect(const QString & cmd);
-
-#endif // IMPORTS_H

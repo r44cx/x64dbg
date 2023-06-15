@@ -24,155 +24,247 @@ std::map<Range, MEMPAGE, RangeCompare> memoryPages;
 bool bListAllPages = false;
 bool bQueryWorkingSet = false;
 
-void MemUpdateMap()
+static std::vector<MEMPAGE> QueryMemPages()
 {
     // First gather all possible pages in the memory range
-    std::vector<MEMPAGE> pageVector;
-    pageVector.reserve(200); //TODO: provide a better estimate
+    std::vector<MEMPAGE> pages;
+    pages.reserve(200); //TODO: provide a better estimate
+
+    SIZE_T numBytes = 0;
+    duint pageStart = 0;
+    duint allocationBase = 0;
+
+    do
     {
-        SIZE_T numBytes = 0;
-        duint pageStart = 0;
-        duint allocationBase = 0;
+        if(!DbgIsDebugging())
+            return {};
 
-        do
+        // Query memory attributes
+        MEMORY_BASIC_INFORMATION mbi;
+        memset(&mbi, 0, sizeof(mbi));
+
+        numBytes = VirtualQueryEx(fdProcessInfo->hProcess, (LPVOID)pageStart, &mbi, sizeof(mbi));
+
+        // Only allow pages that are committed/reserved (exclude free memory)
+        if(mbi.State != MEM_FREE)
         {
-            if(!DbgIsDebugging())
-                return;
-
-            // Query memory attributes
-            MEMORY_BASIC_INFORMATION mbi;
-            memset(&mbi, 0, sizeof(mbi));
-
-            numBytes = VirtualQueryEx(fdProcessInfo->hProcess, (LPVOID)pageStart, &mbi, sizeof(mbi));
-
-            // Only allow pages that are committed/reserved (exclude free memory)
-            if(mbi.State != MEM_FREE)
+            auto bReserved = mbi.State == MEM_RESERVE; //check if the current page is reserved.
+            auto bPrevReserved = pages.size() ? pages.back().mbi.State == MEM_RESERVE : false; //back if the previous page was reserved (meaning this one won't be so it has to be added to the map)
+            // Only list allocation bases, unless if forced to list all
+            if(bListAllPages || bReserved || bPrevReserved || allocationBase != duint(mbi.AllocationBase))
             {
-                auto bReserved = mbi.State == MEM_RESERVE; //check if the current page is reserved.
-                auto bPrevReserved = pageVector.size() ? pageVector.back().mbi.State == MEM_RESERVE : false; //back if the previous page was reserved (meaning this one won't be so it has to be added to the map)
-                // Only list allocation bases, unless if forced to list all
-                if(bListAllPages || bReserved || bPrevReserved || allocationBase != duint(mbi.AllocationBase))
+                // Set the new allocation base page
+                allocationBase = duint(mbi.AllocationBase);
+
+                MEMPAGE curPage;
+                memset(&curPage, 0, sizeof(MEMPAGE));
+                memcpy(&curPage.mbi, &mbi, sizeof(mbi));
+
+                if(bReserved)
                 {
-                    // Set the new allocation base page
-                    allocationBase = duint(mbi.AllocationBase);
-
-                    MEMPAGE curPage;
-                    memset(&curPage, 0, sizeof(MEMPAGE));
-                    memcpy(&curPage.mbi, &mbi, sizeof(mbi));
-
-                    if(bReserved)
+                    if(duint(curPage.mbi.BaseAddress) != allocationBase)
+                        sprintf_s(curPage.info, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Reserved (%p)")), allocationBase);
+                    else
+                        strcpy_s(curPage.info, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Reserved")));
+                }
+                else if(!ModNameFromAddr(pageStart, curPage.info, true))
+                {
+                    // Module lookup failed; check if it's a file mapping
+                    wchar_t szMappedName[sizeof(curPage.info)] = L"";
+                    if((mbi.Type == MEM_MAPPED) &&
+                            (GetMappedFileNameW(fdProcessInfo->hProcess, mbi.AllocationBase, szMappedName, MAX_MODULE_SIZE) != 0))
                     {
-                        if(duint(curPage.mbi.BaseAddress) != allocationBase)
-                            sprintf_s(curPage.info, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Reserved (%p)")), allocationBase);
+                        auto bFileNameOnly = false; //TODO: setting for this
+                        auto fileStart = wcsrchr(szMappedName, L'\\');
+                        if(bFileNameOnly && fileStart)
+                            strcpy_s(curPage.info, StringUtils::Utf16ToUtf8(fileStart + 1).c_str());
                         else
-                            strcpy_s(curPage.info, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Reserved")));
+                            strcpy_s(curPage.info, StringUtils::Utf16ToUtf8(szMappedName).c_str());
                     }
-                    else if(!ModNameFromAddr(pageStart, curPage.info, true))
-                    {
-                        // Module lookup failed; check if it's a file mapping
-                        wchar_t szMappedName[sizeof(curPage.info)] = L"";
-                        if((mbi.Type == MEM_MAPPED) &&
-                                (GetMappedFileNameW(fdProcessInfo->hProcess, mbi.AllocationBase, szMappedName, MAX_MODULE_SIZE) != 0))
-                        {
-                            auto bFileNameOnly = false; //TODO: setting for this
-                            auto fileStart = wcsrchr(szMappedName, L'\\');
-                            if(bFileNameOnly && fileStart)
-                                strcpy_s(curPage.info, StringUtils::Utf16ToUtf8(fileStart + 1).c_str());
-                            else
-                                strcpy_s(curPage.info, StringUtils::Utf16ToUtf8(szMappedName).c_str());
-                        }
-                    }
+                }
 
-                    pageVector.push_back(curPage);
-                }
-                else
-                {
-                    // Otherwise append the page to the last created entry
-                    if(pageVector.size()) //make sure to not dereference an invalid pointer
-                        pageVector.back().mbi.RegionSize += mbi.RegionSize;
-                }
+                pages.push_back(curPage);
             }
-
-            // Calculate the next page start
-            duint newAddress = duint(mbi.BaseAddress) + mbi.RegionSize;
-
-            if(newAddress <= pageStart)
-                break;
-
-            pageStart = newAddress;
+            else
+            {
+                // Otherwise append the page to the last created entry
+                if(pages.size())        //make sure to not dereference an invalid pointer
+                    pages.back().mbi.RegionSize += mbi.RegionSize;
+            }
         }
-        while(numBytes);
-    }
 
-    // Process file sections
-    int pagecount = (int)pageVector.size();
-    char curMod[MAX_MODULE_SIZE] = "";
+        // Calculate the next page start
+        duint newAddress = duint(mbi.BaseAddress) + mbi.RegionSize;
+
+        if(newAddress <= pageStart)
+            break;
+
+        pageStart = newAddress;
+    }
+    while(numBytes);
+
+    return pages;
+}
+
+static void ProcessFileSections(std::vector<MEMPAGE> & pageVector)
+{
+    if(pageVector.empty())
+        return;
+    const auto pagecount = (int)pageVector.size();
+    // NOTE: this iteration is backwards
     for(int i = pagecount - 1; i > -1; i--)
     {
         if(!DbgIsDebugging())
             return;
 
         auto & currentPage = pageVector.at(i);
-        if(!currentPage.info[0] || (scmp(curMod, currentPage.info) && !bListAllPages)) //there is a module
-            continue; //skip non-modules
-        strcpy_s(curMod, pageVector.at(i).info);
-        auto modBase = ModBaseFromName(currentPage.info);
-        if(!modBase)
+
+        // Nothing to do for reserved or free pages
+        if(currentPage.mbi.State == MEM_RESERVE || currentPage.mbi.State == MEM_FREE)
             continue;
-        auto base = duint(currentPage.mbi.AllocationBase);
+
+        auto pageBase = duint(currentPage.mbi.BaseAddress);
+        auto pageSize = currentPage.mbi.RegionSize;
+
+        // Retrieve module info
+        duint modBase = 0;
         std::vector<MODSECTIONINFO> sections;
-        if(!ModSectionsFromAddr(base, &sections))
-            continue;
-        int SectionNumber = (int)sections.size();
-        if(!SectionNumber) //no sections = skip
-            continue;
-        if(!bListAllPages) //normal view
+        duint sectionAlignment = 0;
+        duint modSize = 0;
+        duint sizeOfImage = 0;
         {
-            // coherence check, rest of code assumes whole module resides in one region
-            // in other cases module information cannot be trusted
-            if(base != modBase || currentPage.mbi.RegionSize != ROUND_TO_PAGES(ModSizeFromAddr(modBase)))
+            SHARED_ACQUIRE(LockModules);
+            auto modInfo = ModInfoFromAddr(pageBase);
+
+            // Nothing to do for non-modules
+            if(!modInfo)
                 continue;
 
-            MEMPAGE newPage;
-            //remove the current module page (page = size of module at this point) and insert the module sections
-            pageVector.erase(pageVector.begin() + i); //remove the SizeOfImage page
-            for(int j = SectionNumber - 1; j > -1; j--)
+            modBase = modInfo->base;
+            modSize = modInfo->size;
+            sections = modInfo->sections;
+            if(modInfo->headers)
             {
-                const auto & currentSection = sections.at(j);
-                memset(&newPage, 0, sizeof(MEMPAGE));
-                VirtualQueryEx(fdProcessInfo->hProcess, (LPCVOID)currentSection.addr, &newPage.mbi, sizeof(MEMORY_BASIC_INFORMATION));
-                duint SectionSize = currentSection.size;
-                if(SectionSize % PAGE_SIZE) //unaligned page size
-                    SectionSize += PAGE_SIZE - (SectionSize % PAGE_SIZE); //fix this
-                if(SectionSize)
-                    newPage.mbi.RegionSize = SectionSize;
-                sprintf_s(newPage.info, " \"%s\"", currentSection.name);
-                pageVector.insert(pageVector.begin() + i, newPage);
+                sectionAlignment = modInfo->headers->OptionalHeader.SectionAlignment;
+                sizeOfImage = ROUND_TO_PAGES(modInfo->headers->OptionalHeader.SizeOfImage);
             }
-            //insert the module itself (the module header)
-            memset(&newPage, 0, sizeof(MEMPAGE));
-            VirtualQueryEx(fdProcessInfo->hProcess, (LPCVOID)base, &newPage.mbi, sizeof(MEMORY_BASIC_INFORMATION));
-            strcpy_s(newPage.info, curMod);
-            newPage.mbi.RegionSize = sections.front().addr - base;
-            pageVector.insert(pageVector.begin() + i, newPage);
+            else
+            {
+                // This appears to happen under unknown circumstances
+                // https://github.com/x64dbg/x64dbg/issues/2945
+                // https://github.com/x64dbg/x64dbg/issues/2931
+                sectionAlignment = 0x1000;
+                sizeOfImage = modSize;
+
+                // Spam the user with errors to hopefully get more information
+                std::string summary;
+                summary = StringUtils::sprintf("The module at %p (%s%s) triggers a weird bug, please report an issue\n",  modBase, modInfo->name, modInfo->extension);
+                GuiAddLogMessage(summary.c_str());
+            }
         }
-        else //list all pages
+
+        // Nothing to do if the module doesn't have sections
+        if(sections.empty())
+            continue;
+
+        // It looks like a section alignment of 0x10000 becomes PAGE_SIZE in reality
+        // The rest of the space is mapped as RESERVED
+        sectionAlignment = min(sectionAlignment, PAGE_SIZE);
+
+        auto sectionAlign = [sectionAlignment](duint value)
         {
-            duint start = (duint)currentPage.mbi.BaseAddress;
-            duint end = start + currentPage.mbi.RegionSize;
-            duint infoOffset = 0;
-            // display module name in first region (useful if PE header and first section have same protection)
-            if(start == modBase)
+            return (value + (sectionAlignment - 1)) & ~(sectionAlignment - 1);
+        };
+
+        // Align the sections
+        for(size_t j = 0; j < sections.size(); j++)
+        {
+            auto & section = sections[j];
+            section.addr = sectionAlign(section.addr);
+            section.size = (section.size + (PAGE_SIZE - 1)) & ~(PAGE_SIZE - 1);
+
+            // Extend the last section to SizeOfImage under the right circumstances
+            if(j + 1 == sections.size() && sectionAlignment < PAGE_SIZE)
+            {
+                auto totalSize = section.addr + section.size;
+                totalSize -= modBase;
+                if(sizeOfImage > totalSize)
+                    section.size += sizeOfImage - totalSize;
+            }
+        }
+
+        // Section view
+        if(!bListAllPages)
+        {
+            std::vector<MEMPAGE> newPages;
+            newPages.reserve(sections.size() + 1);
+
+            // Insert a page for the header if this is the header page
+            if(pageBase == modBase)
+            {
+                MEMPAGE headerPage = {};
+                VirtualQueryEx(fdProcessInfo->hProcess, (LPCVOID)modBase, &headerPage.mbi, sizeof(MEMORY_BASIC_INFORMATION));
+                headerPage.mbi.RegionSize = min(sections.front().addr - modBase, pageSize);
+                strcpy_s(headerPage.info, currentPage.info);
+                newPages.push_back(headerPage);
+            }
+
+            // Insert pages for the sections
+            for(const auto & section : sections)
+            {
+                // Only insert the sections that are within the current page
+                if(section.addr >= pageBase && section.addr + section.size <= pageBase + currentPage.mbi.RegionSize)
+                {
+                    MEMPAGE sectionPage = {};
+                    VirtualQueryEx(fdProcessInfo->hProcess, (LPCVOID)section.addr, &sectionPage.mbi, sizeof(MEMORY_BASIC_INFORMATION));
+                    sectionPage.mbi.BaseAddress = (PVOID)section.addr;
+                    sectionPage.mbi.RegionSize = section.size;
+                    sprintf_s(sectionPage.info, " \"%s\"", section.name);
+                    newPages.push_back(sectionPage);
+                }
+            }
+
+            // Make sure the total size matches the new fake pages
+            size_t totalSize = 0;
+            for(const auto & page : newPages)
+                totalSize += page.mbi.RegionSize;
+
+            // Replace the single module page with the sections
+            // newPages should never be empty, but try to avoid data loss if it is
+            if(!newPages.empty() && totalSize == pageSize)
+            {
+                pageVector.erase(pageVector.begin() + i); // remove the SizeOfImage page
+                pageVector.insert(pageVector.begin() + i, newPages.begin(), newPages.end());
+            }
+            else
+            {
+                // Report an error to make it easier to debug
+                auto summary = StringUtils::sprintf("Error replacing page: %p[%p] (%s)\n", pageBase, pageSize, currentPage.info);
+                summary += "Sections:\n";
+                for(const auto & section : sections)
+                    summary += StringUtils::sprintf("  \"%s\": %p[%p]\n", section.name, section.addr, section.size);
+                summary += "New pages:\n";
+                for(const auto & page : newPages)
+                    summary += StringUtils::sprintf(" \"%s\": %p[%p]\n", page.info, page.mbi.BaseAddress, page.mbi.RegionSize);
+                summary += "Please report an issue!\n";
+                GuiAddLogMessage(summary.c_str());
+                strncat_s(currentPage.info, " (error, see log)", _TRUNCATE);
+            }
+        }
+        // List all pages
+        else
+        {
+            size_t infoOffset = 0;
+            // Display module name in first region (useful if PE header and first section have same protection)
+            if(pageBase == modBase)
                 infoOffset = strlen(currentPage.info);
-            for(duint j = 0; (j < (duint)SectionNumber) && (infoOffset + IMAGE_SIZEOF_SHORT_NAME < sizeof(currentPage.info)); j++)
+            for(size_t j = 0; j < sections.size() && infoOffset + 1 < _countof(currentPage.info); j++)
             {
                 const auto & currentSection = sections.at(j);
-                duint secStart = currentSection.addr;
-                duint SectionSize = currentSection.size;
-                if(SectionSize % PAGE_SIZE) //unaligned page size
-                    SectionSize += PAGE_SIZE - (SectionSize % PAGE_SIZE); //fix this
-                duint secEnd = secStart + SectionSize;
-                if(start < secEnd && end > secStart) //the section and memory overlap
+                duint sectionStart = currentSection.addr;
+                duint sectionEnd = sectionStart + currentSection.size;
+                // Check if the section and page overlap
+                if(pageBase < sectionEnd && pageBase + pageSize > sectionStart)
                 {
                     if(infoOffset)
                         infoOffset += _snprintf_s(currentPage.info + infoOffset, sizeof(currentPage.info) - infoOffset, _TRUNCATE, ",");
@@ -181,8 +273,12 @@ void MemUpdateMap()
             }
         }
     }
+}
 
-    // Get a list of threads for information about Kernel/PEB/TEB/Stack ranges
+#define MAX_HEAPS 1000
+
+static void ProcessSystemPages(std::vector<MEMPAGE> & pageVector)
+{
     THREADLIST threadList;
     ThreadGetList(&threadList);
     auto pebBase = (duint)GetPEBLocation(fdProcessInfo->hProcess);
@@ -200,29 +296,56 @@ void MemUpdateMap()
         stackAddrs.push_back((duint)tib.StackLimit);
     }
 
+    ULONG NumberOfHeaps = 0;
+    MemRead(pebBase + offsetof(PEB, NumberOfHeaps), &NumberOfHeaps, sizeof(NumberOfHeaps));
+    duint ProcessHeapsPtr = 0;
+    MemRead(pebBase + offsetof(PEB, ProcessHeaps), &ProcessHeapsPtr, sizeof(ProcessHeapsPtr));
+
+    duint ProcessHeaps[MAX_HEAPS] = {};
+    auto HeapCount = min(_countof(ProcessHeaps), NumberOfHeaps);
+    MemRead(ProcessHeapsPtr, ProcessHeaps, sizeof(duint) * HeapCount);
+    std::unordered_map<duint, uint32_t> processHeapIds;
+    for(uint32_t i = 0; i < HeapCount; i++)
+        processHeapIds.emplace(ProcessHeaps[i], i);
+
     for(auto & page : pageVector)
     {
         const duint pageBase = (duint)page.mbi.BaseAddress;
         const duint pageSize = (duint)page.mbi.RegionSize;
 
-        // Check for windows specific data
-        if(pageBase == 0x7FFE0000)
+        auto inRange = [pageBase, pageSize](duint addr)
         {
-            strcpy_s(page.info, "KUSER_SHARED_DATA");
+            return addr >= pageBase && addr < pageBase + pageSize;
+        };
+
+        auto appendInfo = [&page](const char* str)
+        {
+            if(*page.info)
+            {
+                strncat_s(page.info, ", ", _TRUNCATE);
+            }
+            strncat_s(page.info, str, _TRUNCATE);
+        };
+
+        // Check for windows specific data
+        if(inRange(0x7FFE0000))
+        {
+            appendInfo("KUSER_SHARED_DATA");
             continue;
         }
 
         // Mark PEB
-        if(pageBase == pebBase)
+        if(inRange(pebBase))
         {
-            strcpy_s(page.info, "PEB");
-            continue;
+            appendInfo("PEB");
         }
 
         // Check in threads
+        char temp[256] = "";
         for(int i = 0; i < threadList.count; i++)
         {
             DWORD threadId = threadList.list[i].BasicInfo.ThreadId;
+            auto tidStr = formatpidtid(threadId);
 
             // Mark TEB
             //
@@ -231,39 +354,58 @@ void MemUpdateMap()
             duint tebBase = threadList.list[i].BasicInfo.ThreadLocalBase;
             duint tebBaseWow64 = tebBase - (2 * PAGE_SIZE);
 
-            if(pageBase == tebBase)
+            if(inRange(tebBase))
             {
-                sprintf_s(page.info, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Thread %X TEB")), threadId);
-                break;
+                sprintf_s(temp, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "TEB (%s)")), tidStr.c_str());
+                appendInfo(temp);
             }
-            else if(pageBase == tebBaseWow64)
+
+            if(inRange(tebBaseWow64))
             {
 #ifndef _WIN64
-                if(pageSize == (3 * PAGE_SIZE))
-                {
-                    sprintf_s(page.info, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Thread %X WoW64 TEB")), threadId);
-                    break;
-                }
+                sprintf_s(temp, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "WoW64 TEB (%s)")), tidStr.c_str());
+                appendInfo(temp);
 #endif //_WIN64
             }
 
             // The stack will be a specific range only, not always the base address
             duint stackAddr = stackAddrs[i];
+            if(inRange(stackAddr))
+            {
+                sprintf_s(temp, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Stack (%s)")), tidStr.c_str());
+                appendInfo(temp);
+            }
+        }
 
-            if(stackAddr >= pageBase && stackAddr < (pageBase + pageSize))
-                sprintf_s(page.info, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Thread %X Stack")), threadId);
+        auto heapItr = processHeapIds.find(pageBase);
+        if(heapItr != processHeapIds.end())
+        {
+            sprintf_s(temp, "Heap (ID %u)", heapItr->second);
+            appendInfo(temp);
         }
     }
 
     // Only free thread data if it was allocated
     if(threadList.list)
         BridgeFree(threadList.list);
+}
+
+void MemUpdateMap()
+{
+    // First gather all possible pages in the memory range
+    std::vector<MEMPAGE> pageVector = QueryMemPages();
+
+    // Process file sections
+    ProcessFileSections(pageVector);
+
+    // Get a list of threads for information about Kernel/PEB/TEB/Stack ranges
+    ProcessSystemPages(pageVector);
 
     // Convert the vector to a map
     EXCLUSIVE_ACQUIRE(LockMemoryPages);
     memoryPages.clear();
 
-    for(auto & page : pageVector)
+    for(const auto & page : pageVector)
     {
         duint start = (duint)page.mbi.BaseAddress;
         duint size = (duint)page.mbi.RegionSize;
@@ -301,7 +443,7 @@ duint MemFindBaseAddr(duint Address, duint* Size, bool Refresh, bool FindReserve
     if(found == memoryPages.end())
         return 0;
 
-    if(!FindReserved && found->second.mbi.State == MEM_RESERVE) //check if the current page is reserved.
+    if(!FindReserved && found->second.mbi.State == MEM_RESERVE)        //check if the current page is reserved.
         return 0;
 
     // Return the allocation region size when requested
@@ -589,35 +731,25 @@ bool MemGetPageInfo(duint Address, MEMPAGE* PageInfo, bool Refresh)
 
 bool MemSetPageRights(duint Address, const char* Rights)
 {
-    // Align address to page base
-    Address = PAGE_ALIGN(Address);
-
-    // String -> bit mask
     DWORD protect;
     if(!MemPageRightsFromString(&protect, Rights))
         return false;
 
-    DWORD oldProtect;
-    return !!VirtualProtectEx(fdProcessInfo->hProcess, (void*)Address, PAGE_SIZE, protect, &oldProtect);
+    return MemSetProtect(Address, protect, PAGE_SIZE);
 }
 
 bool MemGetPageRights(duint Address, char* Rights)
 {
-    // Align address to page base
-    Address = PAGE_ALIGN(Address);
-
-    MEMORY_BASIC_INFORMATION mbi;
-    memset(&mbi, 0, sizeof(MEMORY_BASIC_INFORMATION));
-
-    if(!VirtualQueryEx(fdProcessInfo->hProcess, (void*)Address, &mbi, sizeof(mbi)))
+    unsigned int protect = 0;
+    if(!MemGetProtect(Address, true, false, &protect))
         return false;
 
-    return MemPageRightsToString(mbi.Protect, Rights);
+    return MemPageRightsToString(protect, Rights);
 }
 
 bool MemPageRightsToString(DWORD Protect, char* Rights)
 {
-    if(!Protect) //reserved pages don't have a protection (https://goo.gl/Izkk0c)
+    if(!Protect)        //reserved pages don't have a protection (https://goo.gl/Izkk0c)
     {
         *Rights = '\0';
         return true;
@@ -775,13 +907,13 @@ bool MemDecodePointer(duint* Pointer, bool vistaPlus)
     // Pointer adjustment (Windows Vista+)
     if(vistaPlus)
 #ifdef _WIN64
-        *Pointer = ror(*Pointer, (0x40 - (cookie & 0x3F)) & 0xFF);
+        * Pointer = ror(*Pointer, (0x40 - (cookie & 0x3F)) & 0xFF);
 #else
-        *Pointer = ror(*Pointer, (0x20 - (cookie & 0x1F)) & 0xFF);
+        * Pointer = ror(*Pointer, (0x20 - (cookie & 0x1F)) & 0xFF);
 #endif //_WIN64
 
     // XOR pointer with key
-    *Pointer ^= cookie;
+    * Pointer ^= cookie;
 
     return true;
 }
@@ -868,4 +1000,95 @@ bool MemReadDumb(duint BaseAddress, void* Buffer, duint Size)
         readSize = min(PAGE_SIZE, requestedSize);
     }
     return success;
+}
+
+bool MemGetProtect(duint Address, bool Reserved, bool Cache, unsigned int* Protect)
+{
+    if(!Protect)
+        return false;
+
+    // Align address to page base
+    Address = PAGE_ALIGN(Address);
+
+    if(Cache)
+    {
+        SHARED_ACQUIRE(LockMemoryPages);
+        auto found = memoryPages.find({ Address, Address });
+        if(found == memoryPages.end())
+            return false;
+        if(!Reserved && found->second.mbi.State == MEM_RESERVE)     //check if the current page is reserved.
+            return false;
+
+        *Protect = found->second.mbi.Protect;
+    }
+    else
+    {
+        MEMORY_BASIC_INFORMATION mbi;
+        memset(&mbi, 0, sizeof(MEMORY_BASIC_INFORMATION));
+
+        if(!VirtualQueryEx(fdProcessInfo->hProcess, (void*)Address, &mbi, sizeof(mbi)))
+            return false;
+
+        *Protect = mbi.Protect;
+    }
+
+    return true;
+}
+
+static void MemSplitRange(duint Address, duint Size)
+{
+    Size = PAGE_ALIGN(Size);
+
+    auto found = memoryPages.find({ Address, Address });
+    if(found == memoryPages.end())
+        return;
+
+    auto & range = found->first;
+    if(range.second > (Address + Size))
+    {
+        // Requires split.
+        MEMPAGE firstPage = found->second;
+        firstPage.mbi.RegionSize = Size;
+        Range firstRange{ Address, Address + Size };
+
+        MEMPAGE secondPage = found->second;
+        secondPage.mbi.RegionSize = (range.second - (Address + Size));
+        Range secondRange{ Address + Size, range.second };
+
+        memoryPages.erase(found);
+        memoryPages.emplace(firstRange, firstPage);
+        memoryPages.emplace(secondRange, secondPage);
+    }
+}
+
+bool MemSetProtect(duint Address, unsigned int Protect, duint Size)
+{
+    // Align address to page base
+    Address = PAGE_ALIGN(Address);
+
+    DWORD oldProtect;
+    if(VirtualProtectEx(fdProcessInfo->hProcess, (void*)Address, Size, Protect, &oldProtect) == FALSE)
+        return false;
+
+    // Update cache.
+    SHARED_ACQUIRE(LockMemoryPages);
+
+    // When the protection changes we can't treat this as a single page anymore.
+    if(bListAllPages)
+    {
+        // But we only need to split if the view requests it.
+        MemSplitRange(Address, Size);
+    }
+
+    // Update protection info.
+    auto found = memoryPages.find({ Address, Address });
+    while(found != memoryPages.end())
+    {
+        if(found->first.second > (Address + Size))
+            break;
+        found->second.mbi.Protect = Protect;
+        found++;
+    }
+
+    return true;
 }

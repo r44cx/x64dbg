@@ -1,6 +1,5 @@
 #include "cmd-tracing.h"
 #include "debugger.h"
-#include "historycontext.h"
 #include "threading.h"
 #include "module.h"
 #include "console.h"
@@ -11,7 +10,7 @@
 
 extern std::vector<std::pair<duint, duint>> RunToUserCodeBreakpoints;
 
-static bool cbDebugConditionalTrace(void(*callback)(), bool stepOver, int argc, char* argv[])
+static bool genericConditionalTraceCommand(TITANCBSTEP callback, STEPFUNCTION stepFunction, int argc, char* argv[])
 {
     if(IsArgumentsLessThan(argc, 2))
         return false;
@@ -30,72 +29,77 @@ static bool cbDebugConditionalTrace(void(*callback)(), bool stepOver, int argc, 
         dprintf(QT_TRANSLATE_NOOP("DBG", "Invalid expression \"%s\"\n"), argv[1]);
         return false;
     }
-    HistoryClear();
 
-    if(stepOver)
-        StepOverWrapper((void*)callback);
-    else
-        StepIntoWow64((void*)callback);
-    return cbDebugRunInternal(1, argv);
+    stepFunction(callback);
+    return cbDebugRunInternal(1, argv, history_clear);
+}
+
+static bool conditionalTraceIntoCommand(TITANCBSTEP callback, int argc, char* argv[])
+{
+    return genericConditionalTraceCommand(callback, StepIntoWow64, argc, argv);
+}
+
+static bool conditionalTraceOverCommand(TITANCBSTEP callback, int argc, char* argv[])
+{
+    return genericConditionalTraceCommand(callback, StepOverWrapper, argc, argv);
 }
 
 bool cbDebugTraceIntoConditional(int argc, char* argv[])
 {
-    return cbDebugConditionalTrace(cbTraceIntoConditionalStep, false, argc, argv);
+    return conditionalTraceIntoCommand(cbTraceIntoConditionalStep, argc, argv);
 }
 
 bool cbDebugTraceOverConditional(int argc, char* argv[])
 {
-    return cbDebugConditionalTrace(cbTraceOverConditionalStep, true, argc, argv);
+    return conditionalTraceOverCommand(cbTraceOverConditionalStep, argc, argv);
 }
 
 bool cbDebugTraceIntoBeyondTraceRecord(int argc, char* argv[])
 {
     if(argc == 1)
     {
-        char* new_argv[] = { "tibt", "0" };
-        return cbDebugConditionalTrace(cbTraceIntoBeyondTraceRecordStep, false, 2, new_argv);
+        const char* new_argv[] = { "tibt", "0" };
+        return conditionalTraceIntoCommand(cbTraceIntoBeyondTraceRecordStep, 2, (char**)new_argv);
     }
     else
-        return cbDebugConditionalTrace(cbTraceIntoBeyondTraceRecordStep, false, argc, argv);
+        return conditionalTraceIntoCommand(cbTraceIntoBeyondTraceRecordStep, argc, argv);
 }
 
 bool cbDebugTraceOverBeyondTraceRecord(int argc, char* argv[])
 {
     if(argc == 1)
     {
-        char* new_argv[] = { "tobt", "0" };
-        return cbDebugConditionalTrace(cbTraceOverBeyondTraceRecordStep, true, 2, new_argv);
+        const char* new_argv[] = { "tobt", "0" };
+        return conditionalTraceOverCommand(cbTraceOverBeyondTraceRecordStep, 2, (char**)new_argv);
     }
     else
-        return cbDebugConditionalTrace(cbTraceOverBeyondTraceRecordStep, true, argc, argv);
+        return conditionalTraceOverCommand(cbTraceOverBeyondTraceRecordStep, argc, argv);
 }
 
 bool cbDebugTraceIntoIntoTraceRecord(int argc, char* argv[])
 {
     if(argc == 1)
     {
-        char* new_argv[] = { "tiit", "0" };
-        return cbDebugConditionalTrace(cbTraceIntoIntoTraceRecordStep, false, 2, new_argv);
+        const char* new_argv[] = { "tiit", "0" };
+        return conditionalTraceIntoCommand(cbTraceIntoIntoTraceRecordStep, 2, (char**)new_argv);
     }
     else
-        return cbDebugConditionalTrace(cbTraceIntoIntoTraceRecordStep, false, argc, argv);
+        return conditionalTraceIntoCommand(cbTraceIntoIntoTraceRecordStep, argc, argv);
 }
 
 bool cbDebugTraceOverIntoTraceRecord(int argc, char* argv[])
 {
     if(argc == 1)
     {
-        char* new_argv[] = { "toit", "0" };
-        return cbDebugConditionalTrace(cbTraceOverIntoTraceRecordStep, true, 2, new_argv);
+        const char* new_argv[] = { "toit", "0" };
+        return conditionalTraceOverCommand(cbTraceOverIntoTraceRecordStep, 2, (char**)new_argv);
     }
     else
-        return cbDebugConditionalTrace(cbTraceOverIntoTraceRecordStep, true, argc, argv);
+        return conditionalTraceOverCommand(cbTraceOverIntoTraceRecordStep, argc, argv);
 }
 
 bool cbDebugRunToParty(int argc, char* argv[])
 {
-    HistoryClear();
     EXCLUSIVE_ACQUIRE(LockRunToUserCode);
     if(!RunToUserCodeBreakpoints.empty())
     {
@@ -116,18 +120,18 @@ bool cbDebugRunToParty(int argc, char* argv[])
                 {
                     size_t size = DbgMemGetPageSize(j.addr);
                     RunToUserCodeBreakpoints.push_back(std::make_pair(j.addr, size));
-                    SetMemoryBPXEx(j.addr, size, UE_MEMORY_EXECUTE, false, (void*)cbRunToUserCodeBreakpoint);
+                    SetMemoryBPXEx(j.addr, size, UE_MEMORY_EXECUTE, false, cbRunToUserCodeBreakpoint);
                 }
             }
         }
     });
-    return cbDebugRunInternal(1, argv);
+    return cbDebugRunInternal(1, argv, history_clear);
 }
 
 bool cbDebugRunToUserCode(int argc, char* argv[])
 {
-    char* newargv[] = { "RunToParty", "0" };
-    return cbDebugRunToParty(2, newargv);
+    const char* newargv[] = { "RunToParty", "0" };
+    return cbDebugRunToParty(2, (char**)newargv);
 }
 
 bool cbDebugTraceSetLog(int argc, char* argv[])
@@ -154,31 +158,20 @@ bool cbDebugTraceSetCommand(int argc, char* argv[])
     return true;
 }
 
-bool cbDebugTraceSetSwitchCondition(int argc, char* argv[])
-{
-    auto condition = argc > 1 ? argv[1] : "";
-    if(!dbgsettraceswitchcondition(condition))
-    {
-        dprintf(QT_TRANSLATE_NOOP("DBG", "Invalid expression \"%s\"\n"), condition);
-        return false;
-    }
-    return true;
-}
-
 bool cbDebugTraceSetLogFile(int argc, char* argv[])
 {
     auto fileName = argc > 1 ? argv[1] : "";
     return dbgsettracelogfile(fileName);
 }
 
-bool cbDebugStartRunTrace(int argc, char* argv[])
+bool cbDebugStartTraceRecording(int argc, char* argv[])
 {
     if(IsArgumentsLessThan(argc, 2))
         return false;
-    return _dbg_dbgenableRunTrace(true, argv[1]);
+    return TraceRecord.enableTraceRecording(true, argv[1]);
 }
 
-bool cbDebugStopRunTrace(int argc, char* argv[])
+bool cbDebugStopTraceRecording(int argc, char* argv[])
 {
-    return _dbg_dbgenableRunTrace(false, nullptr);
+    return TraceRecord.enableTraceRecording(false, nullptr);
 }

@@ -115,9 +115,22 @@ bool stackcommentget(duint addr, STACK_COMMENT* comment)
     if(*module) //module
     {
         if(*label) //+label
+        {
             sprintf_s(comment->comment, "%s.%s", module, label);
+        }
         else //module only
-            sprintf_s(comment->comment, "%s.%p", module, data);
+        {
+            //prefer strings over just module.address
+            char string[MAX_STRING_SIZE] = "";
+            if(DbgGetStringAt(data, string))
+            {
+                _snprintf_s(comment->comment, _TRUNCATE, "%s.%s", module, string);
+            }
+            else
+            {
+                _snprintf_s(comment->comment, _TRUNCATE, "%s.%p", module, data);
+            }
+        }
         return true;
     }
     else if(*label) //label only
@@ -452,6 +465,10 @@ void stackgetcallstackbythread(HANDLE thread, CALLSTACK* callstack)
         // Copy data directly from the vector
         memcpy(callstack->entries, callstackVector.data(), callstack->total * sizeof(CALLSTACKENTRY));
     }
+    else
+    {
+        callstack->entries = nullptr;
+    }
 }
 
 void stackgetcallstack(duint csp, CALLSTACK* callstack)
@@ -468,6 +485,10 @@ void stackgetcallstack(duint csp, CALLSTACK* callstack)
 
         // Copy data directly from the vector
         memcpy(callstack->entries, callstackVector.data(), callstack->total * sizeof(CALLSTACKENTRY));
+    }
+    else
+    {
+        callstack->entries = nullptr;
     }
 }
 

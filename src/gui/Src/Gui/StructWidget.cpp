@@ -7,6 +7,7 @@
 #include <QFileDialog>
 #include "StringUtil.h"
 #include "MiscUtil.h"
+#include "RichTextItemDelegate.h"
 
 struct TypeDescriptor
 {
@@ -20,7 +21,8 @@ StructWidget::StructWidget(QWidget* parent) :
     ui(new Ui::StructWidget)
 {
     ui->setupUi(this);
-    ui->treeWidget->setStyleSheet("QTreeWidget { color: #000000; background-color: #FFF8F0; alternate-background-color: #DCD9CF; }");
+    ui->treeWidget->setStyleSheet("QTreeWidget { background-color: #FFF8F0; alternate-background-color: #DCD9CF; }");
+    ui->treeWidget->setItemDelegate(new RichTextItemDelegate(&mTextColor, ui->treeWidget));
     connect(Bridge::getBridge(), SIGNAL(typeAddNode(void*, const TYPEDESCRIPTOR*)), this, SLOT(typeAddNode(void*, const TYPEDESCRIPTOR*)));
     connect(Bridge::getBridge(), SIGNAL(typeClear()), this, SLOT(typeClear()));
     connect(Bridge::getBridge(), SIGNAL(typeUpdateWidget()), this, SLOT(typeUpdateWidget()));
@@ -39,12 +41,40 @@ StructWidget::~StructWidget()
     delete ui;
 }
 
+void StructWidget::saveWindowSettings()
+{
+    auto saveColumn = [this](int column)
+    {
+        auto settingName = QString("StructWidgetColumn%1").arg(column);
+        BridgeSettingSetUint("Gui", settingName.toUtf8().constData(), ui->treeWidget->columnWidth(column));
+    };
+    saveColumn(0);
+    saveColumn(1);
+    saveColumn(2);
+    saveColumn(3);
+}
+
+void StructWidget::loadWindowSettings()
+{
+    auto loadColumn = [this](int column)
+    {
+        auto settingName = QString("StructWidgetColumn%1").arg(column);
+        duint width = 0;
+        if(BridgeSettingGetUint("Gui", settingName.toUtf8().constData(), &width))
+            ui->treeWidget->setColumnWidth(column, width);
+    };
+    loadColumn(0);
+    loadColumn(1);
+    loadColumn(2);
+    loadColumn(3);
+}
+
 void StructWidget::colorsUpdatedSlot()
 {
-    auto color = ConfigColor("AbstractTableViewTextColor");
+    mTextColor = ConfigColor("StructTextColor");
     auto background = ConfigColor("StructBackgroundColor");
     auto altBackground = ConfigColor("StructAlternateBackgroundColor");
-    auto style = QString("QTreeWidget { color: %1; background-color: %2; alternate-background-color: %3; }").arg(color.name(), background.name(), altBackground.name());
+    auto style = QString("QTreeWidget { background-color: %1; alternate-background-color: %2; }").arg(background.name(), altBackground.name());
     ui->treeWidget->setStyleSheet(style);
 }
 
@@ -63,9 +93,12 @@ void StructWidget::shortcutsUpdatedSlot()
 
 void StructWidget::typeAddNode(void* parent, const TYPEDESCRIPTOR* type)
 {
+    // Disable updates until the next typeUpdateWidget()
+    ui->treeWidget->setUpdatesEnabled(false);
+
     TypeDescriptor dtype;
     dtype.type = *type;
-    dtype.name = QString(dtype.type.name);
+    dtype.name = highlightTypeName(dtype.type.name);
     dtype.type.name = nullptr;
     auto text = QStringList() << dtype.name << ToPtrString(dtype.type.addr + dtype.type.offset) << "0x" + ToHexString(dtype.type.size);
     QTreeWidgetItem* item = parent ? new QTreeWidgetItem((QTreeWidgetItem*)parent, text) : new QTreeWidgetItem(ui->treeWidget, text);
@@ -84,6 +117,7 @@ void StructWidget::typeClear()
 
 void StructWidget::typeUpdateWidget()
 {
+    ui->treeWidget->setUpdatesEnabled(false);
     for(QTreeWidgetItemIterator it(ui->treeWidget); *it; ++it)
     {
         QTreeWidgetItem* item = *it;
@@ -123,6 +157,7 @@ void StructWidget::typeUpdateWidget()
         }
         item->setText(3, valueStr);
     }
+    ui->treeWidget->setUpdatesEnabled(true);
 }
 
 void StructWidget::dbgStateChangedSlot(DBGSTATE state)
@@ -133,10 +168,10 @@ void StructWidget::dbgStateChangedSlot(DBGSTATE state)
 
 void StructWidget::setupColumns()
 {
-    ui->treeWidget->setColumnWidth(0, 300); //Name
-    ui->treeWidget->setColumnWidth(1, 80); //Address
-    ui->treeWidget->setColumnWidth(2, 80); //Size
-    //ui->treeWidget->setColumnWidth(3, 80); //Value
+    auto charWidth = ui->treeWidget->fontMetrics().width(' ');
+    ui->treeWidget->setColumnWidth(0, 4 + charWidth * 60); //Name
+    ui->treeWidget->setColumnWidth(1, 6 + charWidth * sizeof(duint) * 2); //Address
+    ui->treeWidget->setColumnWidth(2, 4 + charWidth * 6); //Size
 }
 
 #define hasSelection !!ui->treeWidget->selectedItems().count()
@@ -146,24 +181,105 @@ void StructWidget::setupColumns()
 void StructWidget::setupContextMenu()
 {
     mMenuBuilder = new MenuBuilder(this);
-    mMenuBuilder->addAction(makeAction(DIcon("dump.png"), tr("&Follow in Dump"), SLOT(followDumpSlot())), [this](QMenu*)
+    mMenuBuilder->addAction(makeAction(DIcon("dump"), tr("Follow value in Dump"), SLOT(followValueDumpSlot())), [this](QMenu*)
+    {
+        return DbgMemIsValidReadPtr(selectedValue());
+    });
+    mMenuBuilder->addAction(makeAction(DIcon("processor-cpu"), tr("Follow value in Disassembler"), SLOT(followValueDisasmSlot())), [this](QMenu*)
+    {
+        return DbgMemIsValidReadPtr(selectedValue());
+    });
+    mMenuBuilder->addAction(makeAction(DIcon("dump"), tr("&Follow address in Dump"), SLOT(followDumpSlot())), [this](QMenu*)
     {
         return hasSelection && DbgMemIsValidReadPtr(selectedType.addr + selectedType.offset);
     });
-    mMenuBuilder->addAction(makeAction(DIcon("structaddr.png"), tr("Change address"), SLOT(changeAddrSlot())), [this](QMenu*)
+    mMenuBuilder->addAction(makeAction(DIcon("structaddr"), tr("Change address"), SLOT(changeAddrSlot())), [this](QMenu*)
     {
         return hasSelection && !selectedItem->parent() && DbgIsDebugging();
     });
-    mMenuBuilder->addAction(makeAction(DIcon("visitstruct.png"), tr("Visit type"), SLOT(visitSlot())));
-    mMenuBuilder->addAction(makeAction(DIcon("database-import.png"), tr("Load JSON"), SLOT(loadJsonSlot())));
-    mMenuBuilder->addAction(makeAction(DIcon("source.png"), tr("Parse header"), SLOT(parseFileSlot())));
-    mMenuBuilder->addAction(makeAction(DIcon("removestruct.png"), tr("Remove"), SLOT(removeSlot())), [this](QMenu*)
+    mMenuBuilder->addAction(makeAction(DIcon("visitstruct"), tr("Visit type"), SLOT(visitSlot())));
+    mMenuBuilder->addAction(makeAction(DIcon("database-import"), tr("Load JSON"), SLOT(loadJsonSlot())));
+    mMenuBuilder->addAction(makeAction(DIcon("source"), tr("Parse header"), SLOT(parseFileSlot())));
+    mMenuBuilder->addAction(makeAction(DIcon("removestruct"), tr("Remove"), SLOT(removeSlot())), [this](QMenu*)
     {
         return hasSelection && !selectedItem->parent();
     });
-    mMenuBuilder->addAction(makeAction(DIcon("eraser.png"), tr("Clear"), SLOT(clearSlot())));
-    mMenuBuilder->addAction(makeShortcutAction(DIcon("sync.png"), tr("&Refresh"), SLOT(refreshSlot()), "ActionRefresh"));
+    mMenuBuilder->addAction(makeAction(DIcon("eraser"), tr("Clear"), SLOT(clearSlot())));
+    mMenuBuilder->addAction(makeShortcutAction(DIcon("sync"), tr("&Refresh"), SLOT(refreshSlot()), "ActionRefresh"));
     mMenuBuilder->loadFromConfig();
+}
+
+QString StructWidget::highlightTypeName(QString name) const
+{
+    // TODO: this can be improved with colors
+    static auto re = []
+    {
+        const char* keywords[] =
+        {
+            "uint64_t",
+            "uint32_t",
+            "uint16_t",
+            "char16_t",
+            "unsigned",
+            "int64_t",
+            "int32_t",
+            "wchar_t",
+            "int16_t",
+            "uint8_t",
+            "struct",
+            "double",
+            "size_t",
+            "uint64",
+            "uint32",
+            "ushort",
+            "uint16",
+            "signed",
+            "int8_t",
+            "union",
+            "const",
+            "float",
+            "duint",
+            "dsint",
+            "int64",
+            "int32",
+            "short",
+            "int16",
+            "ubyte",
+            "uchar",
+            "uint8",
+            "void",
+            "long",
+            "bool",
+            "byte",
+            "char",
+            "int8",
+            "ptr",
+            "int",
+        };
+        QString keywordRegex;
+        keywordRegex += "\\b(";
+        for(size_t i = 0; i < _countof(keywords); i++)
+        {
+            if(i > 0)
+                keywordRegex += '|';
+            keywordRegex += QRegExp::escape(keywords[i]);
+        }
+        keywordRegex += ")\\b";
+        return QRegExp(keywordRegex, Qt::CaseSensitive);
+    }();
+
+    name.replace(re, "<b>\\1</b>");
+    return std::move(name);
+}
+
+duint StructWidget::selectedValue() const
+{
+    if(!hasSelection)
+        return 0;
+    QStringList split = selectedItem->text(3).split(',');
+    if(split.length() < 1)
+        return 0;
+    return split[0].toULongLong(nullptr, 0);
 }
 
 void StructWidget::on_treeWidget_customContextMenuRequested(const QPoint & pos)
@@ -179,6 +295,20 @@ void StructWidget::followDumpSlot()
     if(!hasSelection)
         return;
     DbgCmdExec(QString("dump %1").arg(ToPtrString(selectedType.addr + selectedType.offset)));
+}
+
+void StructWidget::followValueDumpSlot()
+{
+    if(!hasSelection)
+        return;
+    DbgCmdExec(QString("dump %1").arg(ToPtrString(selectedValue())));
+}
+
+void StructWidget::followValueDisasmSlot()
+{
+    if(!hasSelection)
+        return;
+    DbgCmdExec(QString("disasm %1").arg(ToPtrString(selectedValue())));
 }
 
 void StructWidget::clearSlot()
@@ -206,7 +336,7 @@ void StructWidget::visitSlot()
     mGotoDialog->setWindowTitle(tr("Address to visit"));
     if(DbgIsDebugging() && mGotoDialog->exec() == QDialog::Accepted)
         addr = DbgValFromString(mGotoDialog->expressionText.toUtf8().constData());
-    DbgCmdExec(QString("VisitType %1, %2").arg(mLineEdit.editText, ToPtrString(addr)));
+    DbgCmdExec(QString("VisitType %1, %2, 2").arg(mLineEdit.editText, ToPtrString(addr)));
 }
 
 void StructWidget::loadJsonSlot()

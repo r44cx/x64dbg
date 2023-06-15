@@ -237,6 +237,7 @@ bool cbInstrFindAllMem(int argc, char* argv[])
 
     duint find_size = -1;
     bool findData = false;
+    REFFINDTYPE moduleFindType = CURRENT_REGION;
     if(argc >= 4)
     {
         if(!_stricmp(argv[3], "&data&"))
@@ -245,13 +246,55 @@ bool cbInstrFindAllMem(int argc, char* argv[])
             findData = false;
     }
 
+    if(argc >= 5)
+    {
+        if(!_stricmp(argv[4], "user"))
+            moduleFindType = USER_MODULES;
+        else if(!_stricmp(argv[4], "system"))
+            moduleFindType = SYSTEM_MODULES;
+        else if(!_stricmp(argv[4], "module"))
+            moduleFindType = ALL_MODULES;
+    }
+
     SHARED_ACQUIRE(LockMemoryPages);
     std::vector<SimplePage> searchPages;
     for(auto & itr : memoryPages)
     {
         if(itr.second.mbi.State != MEM_COMMIT)
             continue;
+
         SimplePage page(duint(itr.second.mbi.BaseAddress), itr.second.mbi.RegionSize);
+        if(moduleFindType != CURRENT_REGION)
+        {
+            SHARED_ACQUIRE(LockModules);
+            auto info = ModInfoFromAddr(page.address);
+            if(info)
+            {
+                if(moduleFindType == ALL_MODULES)
+                {
+                    // Looking for modules and this region is in a module
+                }
+                else if(moduleFindType == USER_MODULES && info->party == mod_user)
+                {
+                    // Looking for user modules and this region is in a user module
+                }
+                else if(moduleFindType == SYSTEM_MODULES && info->party == mod_system)
+                {
+                    // Looking for system modules and this region is in a system module
+                }
+                else
+                {
+                    // Module type is not matching
+                    continue;
+                }
+            }
+            else
+            {
+                // Region is not a module
+                continue;
+            }
+        }
+
         if(page.address >= addr && (find_size == -1 || page.address + page.size <= addr + find_size))
             searchPages.push_back(page);
     }
@@ -354,7 +397,7 @@ bool cbInstrFindAsm(int argc, char* argv[])
 
     duint refFindType = CURRENT_REGION;
     if(argc >= 5 && valfromstring(argv[4], &refFindType, true))
-        if(refFindType != CURRENT_REGION && refFindType != CURRENT_MODULE && refFindType != ALL_MODULES)
+        if(refFindType != CURRENT_REGION && refFindType != CURRENT_MODULE && refFindType != USER_MODULES  && refFindType != SYSTEM_MODULES  && refFindType != ALL_MODULES)
             refFindType = CURRENT_REGION;
 
     unsigned char dest[16];
@@ -419,6 +462,26 @@ static bool cbRefFind(Zydis* disasm, BASIC_INSTRUCTION_INFO* basicinfo, REFINFO*
         duint value = basicinfo->value.value;
         if(value >= start && value <= end)
             found = true;
+        // Workaround for sign-extended values, see: https://github.com/x64dbg/x64dbg/issues/2824
+        if((value & ArchValue(0x80000000, 0x800000000000)) != 0)
+        {
+            switch(basicinfo->value.size)
+            {
+            case size_byte:
+                value &= 0xFF;
+                break;
+            case size_word:
+                value &= 0xFFFF;
+                break;
+            case size_dword:
+                value &= 0xFFFFFFFF;
+                break;
+            default:
+                break;
+            }
+            if(value >= start && value <= end)
+                found = true;
+        }
     }
     if((basicinfo->type & TYPE_MEMORY) == TYPE_MEMORY)
     {
@@ -472,7 +535,7 @@ bool cbInstrRefFindRange(int argc, char* argv[])
 
     duint refFindType = CURRENT_REGION;
     if(argc >= 6 && valfromstring(argv[5], &refFindType, true))
-        if(refFindType != CURRENT_REGION && refFindType != CURRENT_MODULE && refFindType != ALL_MODULES)
+        if(refFindType != CURRENT_REGION && refFindType != CURRENT_MODULE &&  refFindType != USER_MODULES &&  refFindType != SYSTEM_MODULES &&  refFindType != ALL_MODULES)
             refFindType = CURRENT_REGION;
 
     int found = RefFind(addr, size, cbRefFind, &range, false, title, (REFFINDTYPE)refFindType, false);
@@ -488,7 +551,10 @@ static bool cbRefStr(Zydis* disasm, BASIC_INSTRUCTION_INFO* basicinfo, REFINFO* 
         GuiReferenceInitialize(refinfo->name);
         GuiReferenceAddColumn(2 * sizeof(duint), GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Address")));
         GuiReferenceAddColumn(100, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Disassembly")));
+        GuiReferenceAddColumn(2 * sizeof(duint), GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "String Address")));
         GuiReferenceAddColumn(500, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "String")));
+        GuiReferenceAddCommand(GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Follow in Disassembly and Dump")), "disasm $0;dump $2");
+        GuiReferenceAddCommand(GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Follow string in Dump")), "dump $2");
         GuiReferenceSetSearchStartCol(2); //only search the strings
         GuiReferenceSetRowCount(0);
         GuiReferenceReloadData();
@@ -498,10 +564,12 @@ static bool cbRefStr(Zydis* disasm, BASIC_INSTRUCTION_INFO* basicinfo, REFINFO* 
     char string[MAX_STRING_SIZE] = "";
     if(basicinfo->branch) //branches have no strings (jmp dword [401000])
         return false;
-    auto addRef = [&]()
+    auto addRef = [&](duint strAddr)
     {
         char addrText[20] = "";
         sprintf_s(addrText, "%p", disasm->Address());
+        char strAddrText[20] = "";
+        sprintf_s(strAddrText, "%p", strAddr);
         GuiReferenceSetRowCount(refinfo->refcount + 1);
         GuiReferenceSetCellContent(refinfo->refcount, 0, addrText);
         char disassembly[4096] = "";
@@ -509,18 +577,19 @@ static bool cbRefStr(Zydis* disasm, BASIC_INSTRUCTION_INFO* basicinfo, REFINFO* 
             GuiReferenceSetCellContent(refinfo->refcount, 1, disassembly);
         else
             GuiReferenceSetCellContent(refinfo->refcount, 1, disasm->InstructionText().c_str());
-        GuiReferenceSetCellContent(refinfo->refcount, 2, string);
+        GuiReferenceSetCellContent(refinfo->refcount, 2, strAddrText);
+        GuiReferenceSetCellContent(refinfo->refcount, 3, string);
         refinfo->refcount++;
     };
     if((basicinfo->type & TYPE_VALUE) == TYPE_VALUE)
     {
         if(DbgGetStringAt(basicinfo->value.value, string))
-            addRef();
+            addRef(basicinfo->value.value);
     }
     if((basicinfo->type & TYPE_MEMORY) == TYPE_MEMORY)
     {
         if(DbgGetStringAt(basicinfo->memory.value, string))
-            addRef();
+            addRef(basicinfo->memory.value);
     }
     return false;
 }
@@ -590,7 +659,7 @@ bool cbInstrRefStr(int argc, char* argv[])
 
     duint refFindType = CURRENT_REGION;
     if(argc >= 4 && valfromstring(argv[3], &refFindType, true))
-        if(refFindType != CURRENT_REGION && refFindType != CURRENT_MODULE && refFindType != ALL_MODULES)
+        if(refFindType != CURRENT_REGION && refFindType != CURRENT_MODULE && refFindType != USER_MODULES && refFindType != SYSTEM_MODULES && refFindType != ALL_MODULES)
             refFindType = CURRENT_REGION;
 
     TranslatedString = GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Strings"));
@@ -687,9 +756,6 @@ static bool cbModCallFind(Zydis* disasm, BASIC_INSTRUCTION_INFO* basicinfo, REFI
     }
     if(foundaddr)
     {
-        auto symbolic = SymGetSymbolicName(foundaddr);
-        if(!symbolic.length())
-            symbolic = StringUtils::sprintf("%p", foundaddr);
         char addrText[20] = "";
         sprintf_s(addrText, "%p", disasm->Address());
         GuiReferenceSetRowCount(refinfo->refcount + 1);
@@ -698,13 +764,12 @@ static bool cbModCallFind(Zydis* disasm, BASIC_INSTRUCTION_INFO* basicinfo, REFI
         if(GuiGetDisassembly((duint)disasm->Address(), disassembly))
         {
             GuiReferenceSetCellContent(refinfo->refcount, 1, disassembly);
-            GuiReferenceSetCellContent(refinfo->refcount, 2, symbolic.c_str());
         }
         else
         {
             GuiReferenceSetCellContent(refinfo->refcount, 1, disasm->InstructionText().c_str());
-            GuiReferenceSetCellContent(refinfo->refcount, 2, symbolic.c_str());
         }
+        GuiReferenceSetCellContent(refinfo->refcount, 2, SymGetSymbolicName(foundaddr).c_str());
     }
     return foundaddr != 0;
 }
@@ -721,7 +786,7 @@ bool cbInstrModCallFind(int argc, char* argv[])
 
     duint refFindType = CURRENT_REGION;
     if(argc >= 4 && valfromstring(argv[3], &refFindType, true))
-        if(refFindType != CURRENT_REGION && refFindType != CURRENT_MODULE && refFindType != ALL_MODULES)
+        if(refFindType != CURRENT_REGION && refFindType != CURRENT_MODULE && refFindType != USER_MODULES && refFindType != SYSTEM_MODULES && refFindType != ALL_MODULES)
             refFindType = CURRENT_REGION;
 
     duint ticks = GetTickCount();

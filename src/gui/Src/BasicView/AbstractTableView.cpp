@@ -75,16 +75,17 @@ AbstractTableView::AbstractTableView(QWidget* parent)
     connect(Config(), SIGNAL(colorsUpdated()), this, SLOT(updateColorsSlot()));
     connect(Config(), SIGNAL(fontsUpdated()), this, SLOT(updateFontsSlot()));
     connect(Config(), SIGNAL(shortcutsUpdated()), this, SLOT(updateShortcutsSlot()));
-    connect(Bridge::getBridge(), SIGNAL(close()), this, SLOT(closeSlot()));
+    connect(Bridge::getBridge(), SIGNAL(shutdown()), this, SLOT(shutdownSlot()));
 
     // todo: try Qt::QueuedConnection to init
     Initialize();
 }
 
-void AbstractTableView::closeSlot()
+void AbstractTableView::shutdownSlot()
 {
     if(ConfigBool("Gui", "SaveColumnOrder"))
         saveColumnToConfig();
+    setAllowPainting(false);
 }
 
 /************************************************************************************
@@ -138,7 +139,18 @@ void AbstractTableView::updateColorsSlot()
 
 void AbstractTableView::updateFontsSlot()
 {
+    auto oldCharWidth = getCharWidth();
     updateFonts();
+    auto newCharWidth = getCharWidth();
+
+    // Scale the column widths to the new font
+    for(int col = 0; col < getColumnCount(); col++)
+    {
+        auto width = getColumnWidth(col);
+        auto charCount = width / oldCharWidth;
+        auto padding = width % oldCharWidth;
+        setColumnWidth(col, charCount * newCharWidth + padding);
+    }
 }
 
 void AbstractTableView::updateShortcutsSlot()
@@ -188,6 +200,13 @@ void AbstractTableView::setupColumnConfigDefaultValue(QMap<QString, duint> & map
     }
 }
 
+void AbstractTableView::editColumnDialog()
+{
+    ColumnReorderDialog reorderDialog(this);
+    reorderDialog.setWindowTitle(tr("Edit columns"));
+    reorderDialog.exec();
+}
+
 /************************************************************************************
                             Painting Stuff
 ************************************************************************************/
@@ -200,6 +219,15 @@ void AbstractTableView::setupColumnConfigDefaultValue(QMap<QString, duint> & map
  */
 void AbstractTableView::paintEvent(QPaintEvent* event)
 {
+    Q_UNUSED(event);
+
+    QPainter wPainter(this->viewport());
+    wPainter.setFont(font());
+
+    // Paint background
+    if(mBackgroundColor.alpha() == 255) // The secret code to allow the user to set a background image in style.css
+        wPainter.fillRect(wPainter.viewport(), QBrush(mBackgroundColor));
+
     if(!mAllowPainting)
         return;
 
@@ -225,9 +253,6 @@ void AbstractTableView::paintEvent(QPaintEvent* event)
             setColumnWidth(last, getColumnWidth(last));
     }
 
-    Q_UNUSED(event);
-    QPainter wPainter(this->viewport());
-    wPainter.setFont(font());
     int wViewableRowsCount = getViewableRowsCount();
 
     int scrollValue = -horizontalScrollBar()->value();
@@ -244,10 +269,7 @@ void AbstractTableView::paintEvent(QPaintEvent* event)
         mShouldReload = false;
     }
 
-    // Paints background
-    wPainter.fillRect(wPainter.viewport(), QBrush(mBackgroundColor));
-
-    // Paints header
+    // Paint header
     if(mHeader.isVisible == true)
     {
         for(int j = 0; j < getColumnCount(); j++)
@@ -297,7 +319,7 @@ void AbstractTableView::paintEvent(QPaintEvent* event)
                     if(wStr.length())
                     {
                         wPainter.setPen(getCellColor(mTableOffset + i, j));
-                        wPainter.drawText(QRect(x + 4, y, getColumnWidth(j) - 4, getRowHeight()), Qt::AlignVCenter | Qt::AlignLeft, wStr);
+                        wPainter.drawText(QRect(x + 4, y, getColumnWidth(j) - 5, getRowHeight()), Qt::AlignVCenter | Qt::AlignLeft, wStr);
                     }
                 }
             }
@@ -316,7 +338,6 @@ void AbstractTableView::paintEvent(QPaintEvent* event)
         y = getHeaderHeight();
         x += getColumnWidth(j);
     }
-    //emit repainted();
 }
 
 /************************************************************************************
@@ -488,9 +509,7 @@ void AbstractTableView::mousePressEvent(QMouseEvent* event)
     {
         if(event->y() < getHeaderHeight())
         {
-            ColumnReorderDialog reorderDialog(this);
-            reorderDialog.setWindowTitle(tr("Edit columns"));
-            reorderDialog.exec();
+            editColumnDialog();
             event->accept();
         }
     }
@@ -553,9 +572,7 @@ void AbstractTableView::mouseDoubleClickEvent(QMouseEvent* event)
 {
     if(event->y() < getHeaderHeight())
     {
-        ColumnReorderDialog reorderDialog(this);
-        reorderDialog.setWindowTitle(tr("Edit columns"));
-        reorderDialog.exec();
+        editColumnDialog();
         event->accept();
     }
 }
@@ -646,7 +663,7 @@ void AbstractTableView::leaveEvent(QEvent* event)
 void AbstractTableView::keyPressEvent(QKeyEvent* event)
 {
     int wKey = event->key();
-    if(event->modifiers())
+    if(event->modifiers() != Qt::NoModifier && event->modifiers() != Qt::KeypadModifier)
         return;
 
     if(wKey == Qt::Key_Up)

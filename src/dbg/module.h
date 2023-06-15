@@ -138,6 +138,8 @@ struct MODINFO
     void unloadSymbols();
     void unmapFile();
     const MODEXPORT* findExport(duint rva) const;
+    const MODIMPORT* findImport(duint iatRva) const;
+    duint getProcAddress(const String & name, int maxForwardDepth = 10) const;
 };
 
 ULONG64 ModRvaToOffset(ULONG64 base, PIMAGE_NT_HEADERS ntHeaders, ULONG64 rva);

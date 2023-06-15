@@ -175,19 +175,19 @@ bool SymbolSourceDIA::loadSymbolsAsync()
         for(size_t i = 0; i < _symData.size(); i++)
         {
             AddrIndex addrIndex;
-            addrIndex.addr = _symData[i].rva;
+            addrIndex.rva = _symData[i].rva;
             addrIndex.index = i;
             _symAddrMap[i] = addrIndex;
         }
         std::sort(_symAddrMap.begin(), _symAddrMap.end(), [this](const AddrIndex & a, const AddrIndex & b)
         {
             // smaller
-            if(a.addr < b.addr)
+            if(a.rva < b.rva)
             {
                 return true;
             }
             // bigger
-            else if(a.addr > b.addr)
+            else if(a.rva > b.rva)
             {
                 return false;
             }
@@ -211,8 +211,8 @@ bool SymbolSourceDIA::loadSymbolsAsync()
             SymbolInfo & sym = _symData[addrIndex.index];
             if(prev && sym.rva == prev->rva && sym.decoratedName == prev->decoratedName && sym.undecoratedName == prev->undecoratedName)
             {
-                sym.decoratedName.swap(String());
-                sym.undecoratedName.swap(String());
+                String().swap(sym.decoratedName);
+                String().swap(sym.undecoratedName);
                 continue;
             }
             prev = &sym;
@@ -345,7 +345,7 @@ bool SymbolSourceDIA::loadSourceLinesAsync()
         lineInfo.sourceFileIndex = found->second.sourceFileIndex;
 
         AddrIndex lineIndex;
-        lineIndex.addr = lineInfo.rva;
+        lineIndex.rva = lineInfo.rva;
         lineIndex.index = _linesData.size() - 1;
         _lineAddrMap.push_back(lineIndex);
     }
@@ -420,7 +420,7 @@ bool SymbolSourceDIA::findSymbolExact(duint rva, SymbolInfo & symInfo)
         return false;
 
     AddrIndex find;
-    find.addr = rva;
+    find.rva = rva;
     find.index = -1;
     auto it = binary_find(_symAddrMap.begin(), _symAddrMap.end(), find);
 
@@ -445,7 +445,7 @@ bool SymbolSourceDIA::findSymbolExactOrLower(duint rva, SymbolInfo & symInfo)
         return false;
 
     AddrIndex find;
-    find.addr = rva;
+    find.rva = rva;
     find.index = -1;
     auto it = [&]()
     {
@@ -454,7 +454,7 @@ bool SymbolSourceDIA::findSymbolExactOrLower(duint rva, SymbolInfo & symInfo)
         if(it == _symAddrMap.end())
             return --it;
         // exact match
-        if(it->addr == rva)
+        if(it->rva == rva)
             return it;
         // right now 'it' points to the first element bigger than rva
         return it == _symAddrMap.begin() ? _symAddrMap.end() : --it;
@@ -467,17 +467,39 @@ bool SymbolSourceDIA::findSymbolExactOrLower(duint rva, SymbolInfo & symInfo)
         return true;
     }
 
-    return nullptr;
+    return false;
 }
 
-void SymbolSourceDIA::enumSymbols(const CbEnumSymbol & cbEnum)
+void SymbolSourceDIA::enumSymbols(const CbEnumSymbol & cbEnum, duint beginRva, duint endRva)
 {
     if(!_symbolsLoaded)
         return;
 
-    for(auto & it : _symAddrMap)
+    if(_symAddrMap.empty())
+        return;
+
+    if(beginRva > endRva)
+        return;
+
+    AddrIndex find;
+    find.rva = beginRva;
+    find.index = -1;
+    auto it = _symAddrMap.begin();
+    if(beginRva > it->rva)
     {
-        const SymbolInfo & sym = _symData[it.index];
+        it = std::lower_bound(_symAddrMap.begin(), _symAddrMap.end(), find);
+        if(it == _symAddrMap.end())
+            return;
+    }
+
+    for(; it != _symAddrMap.end(); it++)
+    {
+        const SymbolInfo & sym = _symData[it->index];
+        if(sym.rva > endRva)
+        {
+            break;
+        }
+
         if(!cbEnum(sym))
         {
             break;
@@ -491,7 +513,7 @@ bool SymbolSourceDIA::findSourceLineInfo(duint rva, LineInfo & lineInfo)
         return false;
 
     AddrIndex find;
-    find.addr = rva;
+    find.rva = rva;
     find.index = -1;
     auto it = binary_find(_lineAddrMap.begin(), _lineAddrMap.end(), find);
     if(it == _lineAddrMap.end())

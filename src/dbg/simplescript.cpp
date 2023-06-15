@@ -285,6 +285,7 @@ static bool scriptcreatelinemap(const char* filename)
                 currentLine.u.branch.dest = scriptinternalstep(labelline);
         }
     }
+    // append a ret instruction at the end of the script when appropriate
     if(!linemap.empty())
     {
         memset(&entry, 0, sizeof(entry));
@@ -308,8 +309,10 @@ static bool scriptcreatelinemap(const char* filename)
             }
             break;
         case linebranch:
-            // a branch at the end of the script can only go back
-            break;
+            // an unconditional branch at the end of the script can only go back
+            if(lastline.u.branch.type == scriptjmp)
+                break;
+        // fallthough to append the ret
         case linelabel:
         case linecomment:
         case lineempty:
@@ -520,6 +523,10 @@ static DWORD WINAPI scriptLoadSyncThread(LPVOID filename)
 
 bool scriptRunSync(int destline, bool silentRet)
 {
+    // disable GUI updates
+    auto guiUpdateWasDisabled = GuiIsUpdateDisabled();
+    if(!guiUpdateWasDisabled)
+        GuiUpdateDisable();
     if(!destline || destline > (int)linemap.size()) //invalid line
         destline = 0;
     if(destline)
@@ -556,6 +563,9 @@ bool scriptRunSync(int destline, bool silentRet)
         }
     }
     bIsRunning = false; //not running anymore
+    // re-enable GUI updates when appropriate
+    if(!guiUpdateWasDisabled)
+        GuiUpdateEnable(true);
     GuiScriptSetIp(scriptIp);
     // the script fully executed (which means scriptIp is reset to the first line), without any errors
     return scriptIp == scriptinternalstep(0) && (scriptLastError == STATUS_EXIT || scriptLastError == STATUS_CONTINUE);

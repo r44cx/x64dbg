@@ -1,11 +1,11 @@
-#ifndef SYMBOLVIEW_H
-#define SYMBOLVIEW_H
+#pragma once
 
 #include <QWidget>
 #include "Bridge.h"
 
 class QMenu;
 class StdSearchListView;
+class StdIconSearchListView;
 class SearchListView;
 class SymbolSearchList;
 class QVBoxLayout;
@@ -69,7 +69,7 @@ private:
     QVBoxLayout* mSymbolLayout;
     QWidget* mSymbolPlaceHolder;
     SearchListView* mSymbolList;
-    StdSearchListView* mModuleList;
+    StdIconSearchListView* mModuleList;
     SymbolSearchList* mSymbolSearchList;
     QMap<QString, duint> mModuleBaseList;
     QAction* mFollowSymbolAction;
@@ -93,5 +93,3 @@ private:
 
     static void cbSymbolEnum(SYMBOLINFO* symbol, void* user);
 };
-
-#endif // SYMBOLVIEW_H

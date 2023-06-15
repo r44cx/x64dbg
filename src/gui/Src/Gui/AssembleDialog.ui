@@ -7,15 +7,15 @@
     <x>0</x>
     <y>0</y>
     <width>526</width>
-    <height>86</height>
+    <height>96</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>0</string>
   </property>
   <property name="windowIcon">
-   <iconset resource="../../resource.qrc">
-    <normaloff>:/icons/images/ui-combo-box-edit.png</normaloff>:/icons/images/ui-combo-box-edit.png</iconset>
+   <iconset theme="ui-combo-box-edit" resource="../../resource.qrc">
+    <normaloff>:/Default/icons/ui-combo-box-edit.png</normaloff>:/Default/icons/ui-combo-box-edit.png</iconset>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <property name="bottomMargin">

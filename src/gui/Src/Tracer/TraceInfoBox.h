@@ -1,5 +1,5 @@
-#ifndef TRACEINFOBOX_H
-#define TRACEINFOBOX_H
+#pragma once
+
 #include "StdTable.h"
 
 class TraceWidget;
@@ -13,6 +13,7 @@ public:
     ~TraceInfoBox();
 
     void update(unsigned long long selection, TraceFileReader* traceFile, const REGDUMP & registers);
+    void clear();
 
 public slots:
     void contextMenuSlot(QPoint pos);
@@ -20,9 +21,6 @@ public slots:
 private:
     void setupContextMenu();
     void setupShortcuts();
-    void clean();
 
     QAction* mCopyLineAction;
 };
-
-#endif //TRACEINFOBOX_H

@@ -2,6 +2,7 @@
 #include "ui_SystemBreakpointScriptDialog.h"
 #include "Bridge.h"
 #include "Configuration.h"
+#include "MiscUtil.h"
 #include <QDirModel>
 #include <QFile>
 #include <QFileDialog>
@@ -33,12 +34,7 @@ SystemBreakpointScriptDialog::SystemBreakpointScriptDialog(QWidget* parent) :
 
     if(DbgIsDebugging())
     {
-        char moduleName[MAX_MODULE_SIZE];
-        if(DbgFunctions()->ModNameFromAddr(DbgValFromString("mod.main()"), moduleName, true))
-        {
-            ui->groupBoxDebuggee->setTitle(tr("2. System breakpoint script for %1").arg(moduleName));
-        }
-
+        ui->groupBoxDebuggee->setTitle(tr("2. System breakpoint script for %1").arg(mainModuleName(true)));
         ui->lineEditDebuggee->setText(DbgFunctions()->DbgGetDebuggeeInitScript());
     }
     else
@@ -94,7 +90,7 @@ void SystemBreakpointScriptDialog::on_openGlobal_clicked()
         {
             // The new script is at app dir
             QString defaultFileName("autorun.txt");
-            defaultFileName = QDir::toNativeSeparators(QCoreApplication::applicationDirPath() + QDir::separator() + defaultFileName);
+            defaultFileName = QDir::toNativeSeparators(QString::fromWCharArray(BridgeUserDirectory()) + QDir::separator() + defaultFileName);
             // Create it
             if(!QFile::exists(defaultFileName))
             {
@@ -114,7 +110,12 @@ void SystemBreakpointScriptDialog::on_openDebuggee_clicked()
 {
     // First open the script if that is available
     if(!ui->lineEditDebuggee->text().isEmpty())
-        QDesktopServices::openUrl(QUrl(QDir::fromNativeSeparators(ui->lineEditDebuggee->text())));
+    {
+        if(!QDesktopServices::openUrl(QUrl("file:///" + QDir::fromNativeSeparators(ui->lineEditDebuggee->text()))))
+        {
+            SimpleWarningBox(this, tr("Error!"), tr("File open failed! Please open the file yourself..."));
+        }
+    }
     else
     {
         // Ask the user to create a new script
@@ -122,14 +123,7 @@ void SystemBreakpointScriptDialog::on_openDebuggee_clicked()
         if(msgyn.exec() == QMessageBox::Yes)
         {
             // The new script is at db dir
-            QString defaultFileName;
-            char moduleName[MAX_MODULE_SIZE];
-            if(DbgFunctions()->ModNameFromAddr(DbgValFromString("mod.main()"), moduleName, false))
-            {
-                defaultFileName = QString::fromUtf8(moduleName);
-            }
-            defaultFileName = defaultFileName + ".autorun.txt";
-            defaultFileName = QDir::toNativeSeparators(QCoreApplication::applicationDirPath() + QDir::separator() + "db" + QDir::separator() + defaultFileName);
+            auto defaultFileName = getDbPath(mainModuleName() + ".autorun.txt");
             // Create it
             if(!QFile::exists(defaultFileName))
             {
@@ -140,7 +134,10 @@ void SystemBreakpointScriptDialog::on_openDebuggee_clicked()
             ui->lineEditDebuggee->setText(defaultFileName);
             ui->openDebuggee->setText(tr("Open"));
             // Open the file
-            QDesktopServices::openUrl(QUrl(QDir::fromNativeSeparators(ui->lineEditDebuggee->text())));
+            if(!QDesktopServices::openUrl(QUrl("file:///" + QDir::fromNativeSeparators(ui->lineEditDebuggee->text()))))
+            {
+                SimpleWarningBox(this, tr("Error!"), tr("File open failed! Please open the file yourself..."));
+            }
         }
     }
 }

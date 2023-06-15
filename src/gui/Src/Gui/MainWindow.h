@@ -1,11 +1,12 @@
-#ifndef MAINWINDOW_H
-#define MAINWINDOW_H
+#pragma once
 
 #include <QMainWindow>
 #include "Imports.h"
 
+class QMutex;
 class QDragEnterEvent;
 class QDropEvent;
+class QMutex;
 class CloseDialog;
 class CommandLineEdit;
 class MHTabWidget;
@@ -55,7 +56,8 @@ public:
     void loadTabSavedOrder();
     void clearTabWidget();
 
-    static void loadSelectedStyle(bool reloadStyleCss = false);
+    static void loadSelectedTheme(bool reloadOnlyStyleCss = false);
+    static void updateDarkTitleBar(QWidget* widget);
 
 public slots:
     void saveWindowSettings();
@@ -90,12 +92,7 @@ public slots:
     void displayThreadsWidget();
     void displayVariables();
     void displayGraphWidget();
-    void displayRunTrace();
-    void displayPreviousTab();
-    void displayNextTab();
-    void displayPreviousView();
-    void displayNextView();
-    void hideTab();
+    void displayTraceWidget();
     void openSettings();
     void openAppearance();
     void openCalculator();
@@ -196,7 +193,6 @@ private:
 
     QAction* actionManageFavourites;
 
-    void updateDarkTitleBar();
     void updateMRUMenu();
     void setupLanguagesMenu();
     void setupThemesMenu();
@@ -216,12 +212,15 @@ private:
     //menu api
     struct MenuEntryInfo
     {
-        QAction* mAction;
-        int hEntry;
-        int hParentMenu;
+        MenuEntryInfo() = default;
+
+        QAction* mAction = nullptr;
+        int hEntry = -1;
+        int hParentMenu = -1;
         QString hotkey;
         QString hotkeyId;
-        bool hotkeyGlobal;
+        bool hotkeyGlobal = false;
+        bool deleted = false;
     };
 
     struct MenuInfo
@@ -232,25 +231,31 @@ private:
         {
         }
 
-        QWidget* parent;
-        QMenu* mMenu;
-        int hMenu;
-        int hParentMenu;
-        bool globalMenu;
+        MenuInfo() = default;
+
+        QWidget* parent = nullptr;
+        QMenu* mMenu = nullptr;
+        int hMenu = -1;
+        int hParentMenu = -1;
+        bool globalMenu = false;
+        bool deleted = false;
     };
 
+    QMutex* mMenuMutex = nullptr;
     int hEntryMenuPool;
     QList<MenuEntryInfo> mEntryList;
     QList<MenuInfo> mMenuList;
 
     void initMenuApi();
-    const MenuInfo* findMenu(int hMenu);
+    MenuInfo* findMenu(int hMenu);
+    MenuEntryInfo* findMenuEntry(int hEntry);
     QString nestedMenuDescription(const MenuInfo* menu);
     QString nestedMenuEntryDescription(const MenuEntryInfo & entry);
-    void clearMenuHelper(int hMenu);
+    void clearMenuHelper(int hMenu, bool markAsDeleted);
     void clearMenuImpl(int hMenu, bool erase);
 
     bool bCanClose;
+    bool bExitWhenDetached;
     MainWindowCloseThread* mCloseThread;
 
     struct WidgetInfo
@@ -270,9 +275,9 @@ private:
     QList<WidgetInfo> mPluginWidgetList;
 
 protected:
-    void dragEnterEvent(QDragEnterEvent* pEvent);
-    void dropEvent(QDropEvent* pEvent);
-    bool event(QEvent* event);
+    void dragEnterEvent(QDragEnterEvent* pEvent) override;
+    void dropEvent(QDropEvent* pEvent) override;
+    bool event(QEvent* event) override;
 
 private slots:
     void setupLanguagesMenu2();
@@ -283,10 +288,8 @@ private slots:
     void on_actionImportSettings_triggered();
     void on_actionImportdatabase_triggered();
     void on_actionExportdatabase_triggered();
-    void on_actionRestartAdmin_triggered();
     void on_actionPlugins_triggered();
     void on_actionCheckUpdates_triggered();
     void on_actionDefaultTheme_triggered();
+    void on_actionAbout_Qt_triggered();
 };
-
-#endif // MAINWINDOW_H

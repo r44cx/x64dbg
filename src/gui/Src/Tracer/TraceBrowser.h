@@ -1,5 +1,4 @@
-#ifndef TRACEBROWSER_H
-#define TRACEBROWSER_H
+#pragma once
 
 #include "AbstractTableView.h"
 #include "VaHistory.h"
@@ -31,6 +30,9 @@ public:
 
     bool isFileOpened() const;
     TraceFileReader* getTraceFile() { return mTraceFile; }
+
+    static bool isRecording();
+    static bool toggleTraceRecording(QWidget* parent);
 
 private:
     enum TableColumnIndex
@@ -76,7 +78,7 @@ private:
     ZydisTokenizer::SingleToken mHighlightToken;
     bool mHighlightingMode;
     bool mPermanentHighlightingMode;
-    bool mAutoDisassemblyFollowSelection;
+    bool mTraceSyncCpu;
     bool mShowMnemonicBrief;
 
     TraceFileReader* mTraceFile;
@@ -152,12 +154,12 @@ signals:
 public slots:
     void openFileSlot();
     void openSlot(const QString & fileName);
-    void toggleRunTraceSlot();
+    void toggleTraceRecordingSlot();
     void closeFileSlot();
     void closeDeleteSlot();
     void parseFinishedSlot();
     void tokenizerConfigUpdatedSlot();
-    void onSelectionChanged(unsigned long long selection);
+    void selectionChangedSlot(unsigned long long selection);
 
     void gotoSlot();
     void rtrSlot();
@@ -182,10 +184,9 @@ public slots:
 
     void updateSlot();
 
-    void toggleAutoDisassemblyFollowSelectionSlot();
+    void synchronizeCpuSlot();
+    void gotoIndexSlot(duint index);
 
 protected:
     void disasm(unsigned long long index, bool history = true);
 };
-
-#endif //TRACEBROWSER_H

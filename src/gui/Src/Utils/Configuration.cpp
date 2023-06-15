@@ -39,7 +39,7 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     defaultColors.insert("DisassemblyBreakpointColor", QColor("#000000"));
     defaultColors.insert("DisassemblyBreakpointBackgroundColor", QColor("#FF0000"));
     defaultColors.insert("DisassemblyHardwareBreakpointColor", QColor("#000000"));
-    defaultColors.insert("DisassemblyHardwareBreakpointBackgroundColor", Qt::transparent);
+    defaultColors.insert("DisassemblyHardwareBreakpointBackgroundColor", QColor("#FF8080"));
     defaultColors.insert("DisassemblyBookmarkColor", QColor("#000000"));
     defaultColors.insert("DisassemblyBookmarkBackgroundColor", QColor("#FEE970"));
     defaultColors.insert("DisassemblyLabelColor", QColor("#FF0000"));
@@ -232,6 +232,7 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     defaultColors.insert("MemoryMapSectionTextColor", QColor("#8B671F"));
     defaultColors.insert("SearchListViewHighlightColor", QColor("#FF0000"));
     defaultColors.insert("SearchListViewHighlightBackgroundColor", Qt::transparent);
+    defaultColors.insert("StructTextColor", QColor("#000000"));
     defaultColors.insert("StructBackgroundColor", QColor("#FFF8F0"));
     defaultColors.insert("StructAlternateBackgroundColor", QColor("#DCD9CF"));
     defaultColors.insert("LogLinkColor", QColor("#00CC00"));
@@ -247,6 +248,8 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     defaultColors.insert("SymbolLoadedTextColor", QColor("#008000"));
     defaultColors.insert("BackgroundFlickerColor", QColor("#ff6961"));
     defaultColors.insert("LinkColor", QColor("#0000ff"));
+    defaultColors.insert("LogColor", QColor("#000000"));
+    defaultColors.insert("LogBackgroundColor", QColor("#FFF8F0"));
 
     //bool settings
     QMap<QString, bool> disassemblyBool;
@@ -273,6 +276,11 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     engineBool.insert("ShowSuspectedCallStack", false);
     defaultBools.insert("Engine", engineBool);
 
+    QMap<QString, bool> miscBool;
+    miscBool.insert("TransparentExceptionStepping", true);
+    miscBool.insert("CheckForAntiCheatDrivers", true);
+    defaultBools.insert("Misc", miscBool);
+
     QMap<QString, bool> guiBool;
     guiBool.insert("FpuRegistersLittleEndian", false);
     guiBool.insert("SaveColumnOrder", true);
@@ -281,12 +289,14 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     guiBool.insert("SidebarWatchLabels", true);
     guiBool.insert("LoadSaveTabOrder", true);
     guiBool.insert("ShowGraphRva", false);
-    guiBool.insert("GraphZoomMode", false);
-    guiBool.insert("ShowExitConfirmation", true);
+    guiBool.insert("GraphZoomMode", true);
+    guiBool.insert("ShowExitConfirmation", false);
     guiBool.insert("DisableAutoComplete", false);
     guiBool.insert("CaseSensitiveAutoComplete", false);
     guiBool.insert("AutoRepeatOnEnter", false);
     guiBool.insert("AutoFollowInStack", true);
+    guiBool.insert("EnableQtHighDpiScaling", true);
+    guiBool.insert("Topmost", false);
     //Named menu settings
     insertMenuBuilderBools(&guiBool, "CPUDisassembly", 50); //CPUDisassembly
     insertMenuBuilderBools(&guiBool, "CPUDump", 50); //CPUDump
@@ -296,8 +306,8 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     insertMenuBuilderBools(&guiBool, "CPUStack", 50); //Stack
     insertMenuBuilderBools(&guiBool, "SourceView", 50); //Source
     insertMenuBuilderBools(&guiBool, "DisassemblerGraphView", 50); //Graph
-    insertMenuBuilderBools(&guiBool, "XrefBrowseDialog", 10); //XrefBrowseDialog
-    insertMenuBuilderBools(&guiBool, "StructWidget", 8); //StructWidget
+    insertMenuBuilderBools(&guiBool, "XrefBrowseDialog", 50); //XrefBrowseDialog
+    insertMenuBuilderBools(&guiBool, "StructWidget", 50); //StructWidget
     insertMenuBuilderBools(&guiBool, "File", 50); //Main Menu : File
     insertMenuBuilderBools(&guiBool, "Debug", 50); //Main Menu : Debug
     insertMenuBuilderBools(&guiBool, "Option", 50); //Main Menu : Option
@@ -328,6 +338,7 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     AbstractTableView::setupColumnConfigDefaultValue(guiUint, "SourceView", 4);
     AbstractTableView::setupColumnConfigDefaultValue(guiUint, "Trace", 7);
     guiUint.insert("SIMDRegistersDisplayMode", 0);
+    guiUint.insert("EditFloatRegisterDefaultMode", 0);
     addWindowPosConfig(guiUint, "AssembleDialog");
     addWindowPosConfig(guiUint, "AttachDialog");
     addWindowPosConfig(guiUint, "GotoDialog");
@@ -342,31 +353,15 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     //uint settings
     QMap<QString, duint> hexdumpUint;
     hexdumpUint.insert("DefaultView", 0);
+    hexdumpUint.insert("CopyDataType", 0);
     defaultUints.insert("HexDump", hexdumpUint);
+    QMap<QString, bool> hexdumpBool;
+    hexdumpBool.insert("KeepSize", false);
+    defaultBools.insert("HexDump", hexdumpBool);
 
     QMap<QString, duint> disasmUint;
     disasmUint.insert("MaxModuleSize", -1);
     defaultUints.insert("Disassembler", disasmUint);
-
-    QMap<QString, duint> tabOrderUint;
-    int curTab = 0;
-    tabOrderUint.insert("CPUTab", curTab++);
-    tabOrderUint.insert("GraphTab", curTab++);
-    tabOrderUint.insert("LogTab", curTab++);
-    tabOrderUint.insert("NotesTab", curTab++);
-    tabOrderUint.insert("BreakpointsTab", curTab++);
-    tabOrderUint.insert("MemoryMapTab", curTab++);
-    tabOrderUint.insert("CallStackTab", curTab++);
-    tabOrderUint.insert("SEHTab", curTab++);
-    tabOrderUint.insert("ScriptTab", curTab++);
-    tabOrderUint.insert("SymbolsTab", curTab++);
-    tabOrderUint.insert("SourceTab", curTab++);
-    tabOrderUint.insert("ReferencesTab", curTab++);
-    tabOrderUint.insert("ThreadsTab", curTab++);
-    curTab++; // removed SnowmanTab
-    tabOrderUint.insert("HandlesTab", curTab++);
-    tabOrderUint.insert("TraceTab", curTab++);
-    defaultUints.insert("TabOrder", tabOrderUint);
 
     //font settings
     QFont font("Lucida Console", 8, QFont::Normal, false);
@@ -442,16 +437,16 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     defaultShortcuts.insert("DebugCommand", Shortcut({tr("Debug"), tr("Command")}, "Ctrl+Return", true));
     defaultShortcuts.insert("DebugTraceIntoConditional", Shortcut({tr("Debug"), tr("Trace into...")}, "Ctrl+Alt+F7", true));
     defaultShortcuts.insert("DebugTraceOverConditional", Shortcut({tr("Debug"), tr("Trace over...")}, "Ctrl+Alt+F8", true));
-    defaultShortcuts.insert("DebugEnableTraceRecordBit", Shortcut({tr("Debug"), tr("Trace Record"), tr("Bit")}, "", true));
-    defaultShortcuts.insert("DebugTraceRecordNone", Shortcut({tr("Debug"), tr("Trace Record"), tr("None")}, "", true));
+    defaultShortcuts.insert("DebugEnableTraceRecordBit", Shortcut({tr("Debug"), tr("Trace coverage"), tr("Bit")}, "", true));
+    defaultShortcuts.insert("DebugTraceRecordNone", Shortcut({tr("Debug"), tr("Trace coverage"), tr("None")}, "", true));
     defaultShortcuts.insert("DebugInstrUndo", Shortcut({tr("Debug"), tr("Undo instruction")}, "Alt+U", true));
     defaultShortcuts.insert("DebugAnimateInto", Shortcut({tr("Debug"), tr("Animate into")}, "Ctrl+F7", true));
     defaultShortcuts.insert("DebugAnimateOver", Shortcut({tr("Debug"), tr("Animate over")}, "Ctrl+F8", true));
     defaultShortcuts.insert("DebugAnimateCommand", Shortcut({tr("Debug"), tr("Animate command")}, "", true));
-    defaultShortcuts.insert("DebugTraceIntoIntoTracerecord", Shortcut({tr("Debug"), tr("Trace into into trace record")}, "", true));
-    defaultShortcuts.insert("DebugTraceOverIntoTracerecord", Shortcut({tr("Debug"), tr("Trace over into trace record")}, "", true));
-    defaultShortcuts.insert("DebugTraceIntoBeyondTracerecord", Shortcut({tr("Debug"), tr("Trace into beyond trace record")}, "", true));
-    defaultShortcuts.insert("DebugTraceOverBeyondTracerecord", Shortcut({tr("Debug"), tr("Trace over beyond trace record")}, "", true));
+    defaultShortcuts.insert("DebugTraceIntoIntoTracerecord", Shortcut({tr("Debug"), tr("Step into until reaching uncovered code")}, "", true));
+    defaultShortcuts.insert("DebugTraceOverIntoTracerecord", Shortcut({tr("Debug"), tr("Step over until reaching uncovered code")}, "", true));
+    defaultShortcuts.insert("DebugTraceIntoBeyondTracerecord", Shortcut({tr("Debug"), tr("Step into until reaching covered code")}, "", true));
+    defaultShortcuts.insert("DebugTraceOverBeyondTracerecord", Shortcut({tr("Debug"), tr("Step over until reaching covered code")}, "", true));
 
     defaultShortcuts.insert("PluginsScylla", Shortcut({tr("Plugins"), tr("Scylla")}, "Ctrl+I", true));
 
@@ -459,7 +454,7 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
 
     defaultShortcuts.insert("OptionsPreferences", Shortcut({tr("Options"), tr("Preferences")}, "", true));
     defaultShortcuts.insert("OptionsAppearance", Shortcut({tr("Options"), tr("Appearance")}, "", true));
-    defaultShortcuts.insert("OptionsShortcuts", Shortcut({tr("Options"), tr("Shortcuts")}, "", true));
+    defaultShortcuts.insert("OptionsShortcuts", Shortcut({tr("Options"), tr("Hotkeys")}, "", true));
     defaultShortcuts.insert("OptionsTopmost", Shortcut({tr("Options"), tr("Topmost")}, "Ctrl+F5", true));
     defaultShortcuts.insert("OptionsReloadStylesheet", Shortcut({tr("Options"), tr("Reload style.css")}, "", true));
 
@@ -472,6 +467,7 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     defaultShortcuts.insert("HelpCrashDump", Shortcut({tr("Help"), tr("Generate Crash Dump")}, "", true));
 
     defaultShortcuts.insert("ActionFindStrings", Shortcut({tr("Actions"), tr("Find Strings")}, "", true));
+    defaultShortcuts.insert("ActionFindStringsModule", Shortcut({tr("Actions"), tr("Find Strings in Current Module")}, "Shift+D", true));
     defaultShortcuts.insert("ActionFindIntermodularCalls", Shortcut({tr("Actions"), tr("Find Intermodular Calls")}, "", true));
     defaultShortcuts.insert("ActionToggleBreakpoint", Shortcut({tr("Actions"), tr("Toggle Breakpoint")}, "F2"));
     defaultShortcuts.insert("ActionEditBreakpoint", Shortcut({tr("Actions"), tr("Set Conditional Breakpoint")}, "Shift+F2"));
@@ -499,7 +495,7 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     defaultShortcuts.insert("ActionDeleteLoop", Shortcut({tr("Actions"), tr("Delete Loop")}, "Ctrl+Shift+L"));
     defaultShortcuts.insert("ActionToggleArgument", Shortcut({tr("Actions"), tr("Toggle Argument")}, "Shift+A"));
     defaultShortcuts.insert("ActionAssemble", Shortcut({tr("Actions"), tr("Assemble")}, "Space"));
-    defaultShortcuts.insert("ActionSetNewOriginHere", Shortcut({tr("Actions"), tr("Set New Origin Here")}, "Ctrl+*"));
+    defaultShortcuts.insert("ActionSetNewOriginHere", Shortcut({tr("Actions"), tr("Set %1 Here").arg(ArchValue("EIP", "RIP"))}, "Ctrl+*"));
     defaultShortcuts.insert("ActionGotoOrigin", Shortcut({tr("Actions"), tr("Goto Origin")}, "*"));
     defaultShortcuts.insert("ActionGotoCBP", Shortcut({tr("Actions"), tr("Goto EBP/RBP")}));
     defaultShortcuts.insert("ActionGotoPrevious", Shortcut({tr("Actions"), tr("Goto Previous")}, "-"));
@@ -527,7 +523,7 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     defaultShortcuts.insert("ActionToggleLogging", Shortcut({tr("Actions"), tr("Enable/Disable Logging")}, ""));
     defaultShortcuts.insert("ActionAllocateMemory", Shortcut({tr("Actions"), tr("Allocate Memory")}, ""));
     defaultShortcuts.insert("ActionFreeMemory", Shortcut({tr("Actions"), tr("Free Memory")}, ""));
-    defaultShortcuts.insert("ActionSyncWithExpression", Shortcut({tr("Actions"), tr("Sync With Expression")}, ""));
+    defaultShortcuts.insert("ActionSync", Shortcut({tr("Actions"), tr("Sync")}, "S"));
     defaultShortcuts.insert("ActionCopyAllRegisters", Shortcut({tr("Actions"), tr("Copy All Registers")}, ""));
     defaultShortcuts.insert("ActionMarkAsUser", Shortcut({tr("Actions"), tr("Mark As User Module")}, ""));
     defaultShortcuts.insert("ActionMarkAsSystem", Shortcut({tr("Actions"), tr("Mark As System Module")}, ""));
@@ -568,12 +564,6 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     defaultShortcuts.insert("ActionTreatSelectionHeadAsMMWord", Shortcut({tr("Actions"), tr("Treat Selection Head As"), tr("MMWord")}, ""));
     defaultShortcuts.insert("ActionTreatSelectionHeadAsXMMWord", Shortcut({tr("Actions"), tr("Treat Selection Head As"), tr("XMMWord")}, ""));
     defaultShortcuts.insert("ActionTreatSelectionHeadAsYMMWord", Shortcut({tr("Actions"), tr("Treat Selection Head As"), tr("YMMWord")}, ""));
-    defaultShortcuts.insert("ActionIncreaseRegister", Shortcut({tr("Actions"), tr("Increase Register")}, "+"));
-    defaultShortcuts.insert("ActionDecreaseRegister", Shortcut({tr("Actions"), tr("Decrease Register")}, "-"));
-    defaultShortcuts.insert("ActionIncreaseRegisterPtrSize", Shortcut({tr("Actions"), tr("Increase Register by") + ArchValue(QString(" 4"), QString(" 8"))}));
-    defaultShortcuts.insert("ActionDecreaseRegisterPtrSize", Shortcut({tr("Actions"), tr("Decrease Register by") + ArchValue(QString(" 4"), QString(" 8"))}));
-    defaultShortcuts.insert("ActionZeroRegister", Shortcut({tr("Actions"), tr("Zero Register")}, "0"));
-    defaultShortcuts.insert("ActionSetOneRegister", Shortcut({tr("Actions"), tr("Set Register to One")}, "1"));
     defaultShortcuts.insert("ActionToggleRegisterValue", Shortcut({tr("Actions"), tr("Toggle Register Value")}, "Space"));
     defaultShortcuts.insert("ActionClear", Shortcut({tr("Actions"), tr("Clear")}, "Ctrl+L"));
     defaultShortcuts.insert("ActionCopy", Shortcut({tr("Actions"), tr("Copy")}, "Ctrl+C"));
@@ -599,11 +589,8 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     defaultShortcuts.insert("ActionGraphSaveImage", Shortcut({tr("Actions"), tr("Graph"), tr("Save as image")}, "I"));
     defaultShortcuts.insert("ActionGraphToggleOverview", Shortcut({tr("Actions"), tr("Graph"), tr("Toggle overview")}, "O"));
     defaultShortcuts.insert("ActionGraphToggleSummary", Shortcut({tr("Actions"), tr("Graph"), tr("Toggle summary")}, "U"));
-    defaultShortcuts.insert("ActionGraphSyncOrigin", Shortcut({tr("Actions"), tr("Graph"), tr("Toggle sync with origin")}, "S"));
     defaultShortcuts.insert("ActionIncrementx87Stack", Shortcut({tr("Actions"), tr("Increment x87 Stack")}));
     defaultShortcuts.insert("ActionDecrementx87Stack", Shortcut({tr("Actions"), tr("Decrement x87 Stack")}));
-    defaultShortcuts.insert("ActionPush", Shortcut({tr("Actions"), tr("Push")}));
-    defaultShortcuts.insert("ActionPop", Shortcut({tr("Actions"), tr("Pop")}));
     defaultShortcuts.insert("ActionRedirectLog", Shortcut({tr("Actions"), tr("Redirect Log")}));
     defaultShortcuts.insert("ActionBrowseInExplorer", Shortcut({tr("Actions"), tr("Browse in Explorer")}));
     defaultShortcuts.insert("ActionDownloadSymbol", Shortcut({tr("Actions"), tr("Download Symbols for This Module")}));
@@ -624,7 +611,7 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     defaultShortcuts.insert("ActionModifyValue", Shortcut({tr("Actions"), tr("Modify value")}, "Space"));
     defaultShortcuts.insert("ActionWatchDwordQword", Shortcut({tr("Actions"), tr("Watch DWORD/QWORD")}));
     defaultShortcuts.insert("ActionCopyFileOffset", Shortcut({tr("Actions"), tr("Copy File Offset")}));
-    defaultShortcuts.insert("ActionToggleRunTrace", Shortcut({tr("Actions"), tr("Start or Stop Run Trace")}));
+    defaultShortcuts.insert("ActionToggleRunTrace", Shortcut({tr("Actions"), tr("Start/Stop trace recording")}));
 
     defaultShortcuts.insert("ActionCopyCroppedTable", Shortcut({tr("Actions"), tr("Copy -> Cropped Table")}));
     defaultShortcuts.insert("ActionCopyTable", Shortcut({tr("Actions"), tr("Copy -> Table")}));
@@ -732,21 +719,13 @@ void Configuration::readUints()
 
 void Configuration::writeUints()
 {
-    duint setting;
-    bool bSaveLoadTabOrder = ConfigBool("Gui", "LoadSaveTabOrder");
-
     //write config
     for(auto itMap = Uints.cbegin(); itMap != Uints.cend(); ++itMap)
     {
         const QString & category = itMap.key();
         for(auto it = itMap.value().cbegin(); it != itMap.value().cend(); it++)
         {
-            // Do not save settings to file if saveLoadTabOrder checkbox is Unchecked
-            const QString & id = it.key();
-            if(!bSaveLoadTabOrder && category == "TabOrder" && BridgeSettingGetUint(category.toUtf8().constData(), id.toUtf8().constData(), &setting))
-                continue;
-
-            uintToConfig(category, id, it.value());
+            uintToConfig(category, it.key(), it.value());
         }
     }
 }
@@ -816,7 +795,7 @@ const QColor Configuration::getColor(const QString & id) const
     if(noMoreMsgbox)
         return Qt::black;
     QMessageBox msg(QMessageBox::Warning, tr("NOT FOUND IN CONFIG!"), id, QMessageBox::Retry | QMessageBox::Cancel);
-    msg.setWindowIcon(DIcon("compile-warning.png"));
+    msg.setWindowIcon(DIcon("compile-warning"));
     msg.setWindowFlags(msg.windowFlags() & (~Qt::WindowContextHelpButtonHint));
     if(msg.exec() == QMessageBox::Cancel)
         noMoreMsgbox = true;
@@ -831,8 +810,8 @@ const bool Configuration::getBool(const QString & category, const QString & id) 
             return Bools[category][id];
         if(noMoreMsgbox)
             return false;
-        QMessageBox msg(QMessageBox::Warning, tr("NOT FOUND IN CONFIG!"), category + ":" + id, QMessageBox::Retry | QMessageBox::Cancel);
-        msg.setWindowIcon(DIcon("compile-warning.png"));
+        QMessageBox msg(QMessageBox::Warning, tr("NOT FOUND IN CONFIG!"), category + ":" + id, QMessageBox::Retry | QMessageBox::Cancel); /* insertMenuBuilderBools */
+        msg.setWindowIcon(DIcon("compile-warning"));
         msg.setWindowFlags(msg.windowFlags() & (~Qt::WindowContextHelpButtonHint));
         if(msg.exec() == QMessageBox::Cancel)
             noMoreMsgbox = true;
@@ -841,7 +820,7 @@ const bool Configuration::getBool(const QString & category, const QString & id) 
     if(noMoreMsgbox)
         return false;
     QMessageBox msg(QMessageBox::Warning, tr("NOT FOUND IN CONFIG!"), category, QMessageBox::Retry | QMessageBox::Cancel);
-    msg.setWindowIcon(DIcon("compile-warning.png"));
+    msg.setWindowIcon(DIcon("compile-warning"));
     msg.setWindowFlags(msg.windowFlags() & (~Qt::WindowContextHelpButtonHint));
     if(msg.exec() == QMessageBox::Cancel)
         noMoreMsgbox = true;
@@ -860,7 +839,7 @@ void Configuration::setBool(const QString & category, const QString & id, const 
         if(noMoreMsgbox)
             return;
         QMessageBox msg(QMessageBox::Warning, tr("NOT FOUND IN CONFIG!"), category + ":" + id, QMessageBox::Retry | QMessageBox::Cancel);
-        msg.setWindowIcon(DIcon("compile-warning.png"));
+        msg.setWindowIcon(DIcon("compile-warning"));
         msg.setWindowFlags(msg.windowFlags() & (~Qt::WindowContextHelpButtonHint));
         if(msg.exec() == QMessageBox::Cancel)
             noMoreMsgbox = true;
@@ -869,7 +848,7 @@ void Configuration::setBool(const QString & category, const QString & id, const 
     if(noMoreMsgbox)
         return;
     QMessageBox msg(QMessageBox::Warning, tr("NOT FOUND IN CONFIG!"), category, QMessageBox::Retry | QMessageBox::Cancel);
-    msg.setWindowIcon(DIcon("compile-warning.png"));
+    msg.setWindowIcon(DIcon("compile-warning"));
     msg.setWindowFlags(msg.windowFlags() & (~Qt::WindowContextHelpButtonHint));
     if(msg.exec() == QMessageBox::Cancel)
         noMoreMsgbox = true;
@@ -884,7 +863,7 @@ const duint Configuration::getUint(const QString & category, const QString & id)
         if(noMoreMsgbox)
             return 0;
         QMessageBox msg(QMessageBox::Warning, tr("NOT FOUND IN CONFIG!"), category + ":" + id, QMessageBox::Retry | QMessageBox::Cancel);
-        msg.setWindowIcon(DIcon("compile-warning.png"));
+        msg.setWindowIcon(DIcon("compile-warning"));
         msg.setWindowFlags(msg.windowFlags() & (~Qt::WindowContextHelpButtonHint));
         if(msg.exec() == QMessageBox::Cancel)
             noMoreMsgbox = true;
@@ -893,7 +872,7 @@ const duint Configuration::getUint(const QString & category, const QString & id)
     if(noMoreMsgbox)
         return 0;
     QMessageBox msg(QMessageBox::Warning, tr("NOT FOUND IN CONFIG!"), category, QMessageBox::Retry | QMessageBox::Cancel);
-    msg.setWindowIcon(DIcon("compile-warning.png"));
+    msg.setWindowIcon(DIcon("compile-warning"));
     msg.setWindowFlags(msg.windowFlags() & (~Qt::WindowContextHelpButtonHint));
     if(msg.exec() == QMessageBox::Cancel)
         noMoreMsgbox = true;
@@ -912,7 +891,7 @@ void Configuration::setUint(const QString & category, const QString & id, const 
         if(noMoreMsgbox)
             return;
         QMessageBox msg(QMessageBox::Warning, tr("NOT FOUND IN CONFIG!"), category + ":" + id, QMessageBox::Retry | QMessageBox::Cancel);
-        msg.setWindowIcon(DIcon("compile-warning.png"));
+        msg.setWindowIcon(DIcon("compile-warning"));
         msg.setWindowFlags(msg.windowFlags() & (~Qt::WindowContextHelpButtonHint));
         if(msg.exec() == QMessageBox::Cancel)
             noMoreMsgbox = true;
@@ -921,7 +900,7 @@ void Configuration::setUint(const QString & category, const QString & id, const 
     if(noMoreMsgbox)
         return;
     QMessageBox msg(QMessageBox::Warning, tr("NOT FOUND IN CONFIG!"), category, QMessageBox::Retry | QMessageBox::Cancel);
-    msg.setWindowIcon(DIcon("compile-warning.png"));
+    msg.setWindowIcon(DIcon("compile-warning"));
     msg.setWindowFlags(msg.windowFlags() & (~Qt::WindowContextHelpButtonHint));
     if(msg.exec() == QMessageBox::Cancel)
         noMoreMsgbox = true;
@@ -937,7 +916,7 @@ const QFont Configuration::getFont(const QString & id) const
     if(noMoreMsgbox)
         return ret;
     QMessageBox msg(QMessageBox::Warning, tr("NOT FOUND IN CONFIG!"), id, QMessageBox::Retry | QMessageBox::Cancel);
-    msg.setWindowIcon(DIcon("compile-warning.png"));
+    msg.setWindowIcon(DIcon("compile-warning"));
     msg.setWindowFlags(msg.windowFlags() & (~Qt::WindowContextHelpButtonHint));
     if(msg.exec() == QMessageBox::Cancel)
         noMoreMsgbox = true;
@@ -951,7 +930,7 @@ const Configuration::Shortcut Configuration::getShortcut(const QString & key_id)
     if(!noMoreMsgbox)
     {
         QMessageBox msg(QMessageBox::Warning, tr("NOT FOUND IN CONFIG!"), key_id, QMessageBox::Retry | QMessageBox::Cancel);
-        msg.setWindowIcon(DIcon("compile-warning.png"));
+        msg.setWindowIcon(DIcon("compile-warning"));
         msg.setWindowFlags(msg.windowFlags() & (~Qt::WindowContextHelpButtonHint));
         if(msg.exec() == QMessageBox::Cancel)
             noMoreMsgbox = true;
@@ -969,7 +948,7 @@ void Configuration::setShortcut(const QString & key_id, const QKeySequence key_s
     if(noMoreMsgbox)
         return;
     QMessageBox msg(QMessageBox::Warning, tr("NOT FOUND IN CONFIG!"), key_id, QMessageBox::Retry | QMessageBox::Cancel);
-    msg.setWindowIcon(DIcon("compile-warning.png"));
+    msg.setWindowIcon(DIcon("compile-warning"));
     msg.setWindowFlags(msg.windowFlags() & (~Qt::WindowContextHelpButtonHint));
     if(msg.exec() == QMessageBox::Cancel)
         noMoreMsgbox = true;

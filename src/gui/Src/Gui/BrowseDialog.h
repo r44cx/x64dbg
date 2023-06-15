@@ -1,5 +1,4 @@
-#ifndef BROWSEDIALOG_H
-#define BROWSEDIALOG_H
+#pragma once
 
 #include <QDialog>
 
@@ -13,7 +12,7 @@ class BrowseDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit BrowseDialog(QWidget* parent, const QString & title, const QString & text, const QString & filter, const QString & defaultPath, bool save);
+    BrowseDialog(QWidget* parent, const QString & title, const QString & text, const QString & filter, const QString & defaultPath, bool save);
     ~BrowseDialog();
 
     QString path;
@@ -26,5 +25,3 @@ private:
     QString mFilter;
     bool mSave;
 };
-
-#endif // BROWSEDIALOG_H

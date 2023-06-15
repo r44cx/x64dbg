@@ -1,5 +1,4 @@
-#ifndef CPUMULTIDUMP_H
-#define CPUMULTIDUMP_H
+#pragma once
 
 #include <QWidget>
 #include "TabWidget.h"
@@ -20,6 +19,8 @@ public:
     void getTabNames(QList<QString> & names);
     int getMaxCPUTabs();
     QMenu* mDumpPluginMenu;
+    void saveWindowSettings();
+    void loadWindowSettings();
 
 signals:
     void displayReferencesWidget();
@@ -52,5 +53,3 @@ private:
     void SwitchToDumpWindow();
     void SwitchToWatchWindow();
 };
-
-#endif // CPUMULTIDUMP_H

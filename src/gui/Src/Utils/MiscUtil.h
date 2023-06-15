@@ -1,5 +1,4 @@
-#ifndef MISCUTIL_H
-#define MISCUTIL_H
+#pragma once
 
 #include <QIcon>
 #include <functional>
@@ -21,15 +20,9 @@ QString getSymbolicNameStr(duint addr);
 bool ExportCSV(dsint rows, dsint columns, std::vector<QString> headers, std::function<QString(dsint, dsint)> getCellContent);
 bool isEaster();
 bool isSeasonal();
-QString couldItBeSeasonal(QString icon);
 QIcon getFileIcon(QString file);
+QIcon DIconHelper(QString name);
+QString getDbPath(const QString & filename = QString(), bool addDateTimeSuffix = false);
+QString mainModuleName(bool extension = false);
 
-template<int>
-static const QIcon & DIconHelper(const QString & file)
-{
-    static QIcon icon(QString(":/icons/images/").append(couldItBeSeasonal(file)));
-    return icon;
-}
-
-#define DIcon(file) DIconHelper<__LINE__>(file)
-#endif // MISCUTIL_H
+#define DIcon(name) [](QString arg) { static QIcon icon(DIconHelper(std::move(arg))); return icon; }(name)

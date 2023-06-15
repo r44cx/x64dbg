@@ -68,7 +68,10 @@ bool TraceRecordManager::setTraceRecordType(duint pageAddress, TraceRecordType t
                 newPage.moduleIndex = getModuleIndex(std::string(modName));
             }
             else
+            {
+                newPage.rva = pageAddress;
                 newPage.moduleIndex = ~0;
+            }
 
             auto inserted = TraceRecord.insert(std::make_pair(ModHashFromAddr(pageAddress), newPage));
             if(inserted.second == false) // we failed to insert new page into the map
@@ -247,7 +250,7 @@ static void HandleZydisOperand(const Zydis & cp, int opindex, DISASM_ARGTYPE* ar
 
 void TraceRecordManager::TraceExecuteRecord(const Zydis & newInstruction)
 {
-    if(!isRunTraceEnabled())
+    if(!isTraceRecordingEnabled())
         return;
     unsigned char WriteBuffer[3072];
     unsigned char* WriteBufferPtr = WriteBuffer;
@@ -414,12 +417,12 @@ void TraceRecordManager::TraceExecuteRecord(const Zydis & newInstruction)
         if(WriteBufferPtr - WriteBuffer <= sizeof(WriteBuffer))
         {
             DWORD written;
-            WriteFile(rtFile, WriteBuffer, WriteBufferPtr - WriteBuffer, &written, NULL);
+            WriteFile(rtFile, WriteBuffer, (DWORD)(WriteBufferPtr - WriteBuffer), &written, NULL);
             if(written < DWORD(WriteBufferPtr - WriteBuffer)) //Disk full?
             {
                 CloseHandle(rtFile);
-                String error = stringformatinline(StringUtils::sprintf("{winerror@%d}", GetLastError()));
-                dprintf(QT_TRANSLATE_NOOP("DBG", "Run trace has stopped unexpectedly because WriteFile() failed. GetLastError() = %s.\r\n"), error.c_str());
+                String error = stringformatinline(StringUtils::sprintf("{winerror@%x}", GetLastError()));
+                dprintf(QT_TRANSLATE_NOOP("DBG", "Trace recording has stopped unexpectedly because WriteFile() failed. GetLastError() = %s.\r\n"), error.c_str());
                 rtEnabled = false;
             }
         }
@@ -486,12 +489,12 @@ void TraceRecordManager::increaseInstructionCounter()
     InterlockedIncrement((volatile long*)&instructionCounter);
 }
 
-bool TraceRecordManager::enableRunTrace(bool enabled, const char* fileName)
+bool TraceRecordManager::enableTraceRecording(bool enabled, const char* fileName)
 {
     if(enabled)
     {
         if(rtEnabled)
-            enableRunTrace(false, NULL); //re-enable run trace
+            enableTraceRecording(false, NULL); //re-enable run trace
         if(!DbgIsDebugging())
             return false;
         rtFile = CreateFileW(StringUtils::Utf8ToUtf16(fileName).c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -522,23 +525,23 @@ bool TraceRecordManager::enableRunTrace(bool enabled, const char* fileName)
                     LARGE_INTEGER header;
                     DWORD written;
                     header.LowPart = MAKEFOURCC('T', 'R', 'A', 'C');
-                    header.HighPart = headerinfosize;
+                    header.HighPart = (LONG)headerinfosize;
                     WriteFile(rtFile, &header, 8, &written, nullptr);
                     if(written < 8) //read-only?
                     {
                         CloseHandle(rtFile);
                         json_free(headerinfo);
                         json_decref(root);
-                        dputs(QT_TRANSLATE_NOOP("DBG", "Run trace failed to start because file header cannot be written."));
+                        dputs(QT_TRANSLATE_NOOP("DBG", "Trace recording failed to start because the file header cannot be written."));
                         return false;
                     }
-                    WriteFile(rtFile, headerinfo, headerinfosize, &written, nullptr);
+                    WriteFile(rtFile, headerinfo, (DWORD)headerinfosize, &written, nullptr);
                     json_free(headerinfo);
                     json_decref(root);
                     if(written < headerinfosize) //disk-full?
                     {
                         CloseHandle(rtFile);
-                        dputs(QT_TRANSLATE_NOOP("DBG", "Run trace failed to start because file header cannot be written."));
+                        dputs(QT_TRANSLATE_NOOP("DBG", "Trace recording failed to start because the file header cannot be written."));
                         return false;
                     }
                 }
@@ -549,7 +552,7 @@ bool TraceRecordManager::enableRunTrace(bool enabled, const char* fileName)
             rtNeedThreadId = true;
             for(size_t i = 0; i < _countof(rtOldContextChanged); i++)
                 rtOldContextChanged[i] = true;
-            dprintf(QT_TRANSLATE_NOOP("DBG", "Run trace started. File: %s\r\n"), fileName);
+            dprintf(QT_TRANSLATE_NOOP("DBG", "Started trace recording to file: %s\r\n"), fileName);
             Zydis cp;
             unsigned char instr[MAX_DISASM_BUFFER];
             auto cip = GetContextDataEx(hActiveThread, UE_CIP);
@@ -563,8 +566,8 @@ bool TraceRecordManager::enableRunTrace(bool enabled, const char* fileName)
         }
         else
         {
-            String error = stringformatinline(StringUtils::sprintf("{winerror@%d}", GetLastError()));
-            dprintf(QT_TRANSLATE_NOOP("DBG", "Cannot create run trace file. GetLastError() = %s.\r\n"), error.c_str());
+            String error = stringformatinline(StringUtils::sprintf("{winerror@%x}", GetLastError()));
+            dprintf(QT_TRANSLATE_NOOP("DBG", "Cannot create trace recording file. GetLastError() = %s.\r\n"), error.c_str());
             return false;
         }
     }
@@ -575,7 +578,7 @@ bool TraceRecordManager::enableRunTrace(bool enabled, const char* fileName)
             CloseHandle(rtFile);
             rtPrevInstAvailable = false;
             rtEnabled = false;
-            dputs(QT_TRANSLATE_NOOP("DBG", "Run trace stopped."));
+            dputs(QT_TRANSLATE_NOOP("DBG", "Trace recording stopped."));
         }
         return true;
     }
@@ -700,12 +703,12 @@ unsigned int TraceRecordManager::getModuleIndex(const String & moduleName)
     }
 }
 
-bool TraceRecordManager::isRunTraceEnabled()
+bool TraceRecordManager::isTraceRecordingEnabled()
 {
     return rtEnabled;
 }
 
-void _dbg_dbgtraceexecute(duint CIP)
+void dbgtraceexecute(duint CIP)
 {
     if(TraceRecord.getTraceRecordType(CIP) != TraceRecordManager::TraceRecordType::TraceRecordNone)
     {
@@ -714,7 +717,7 @@ void _dbg_dbgtraceexecute(duint CIP)
         if(MemRead(CIP, data, MAX_DISASM_BUFFER))
         {
             instruction.DisassembleSafe(CIP, data, MAX_DISASM_BUFFER);
-            if(TraceRecord.isRunTraceEnabled())
+            if(TraceRecord.isTraceRecordingEnabled())
             {
                 TraceRecord.TraceExecute(CIP, instruction.Size());
                 TraceRecord.TraceExecuteRecord(instruction);
@@ -727,7 +730,7 @@ void _dbg_dbgtraceexecute(duint CIP)
     }
     else
     {
-        if(TraceRecord.isRunTraceEnabled())
+        if(TraceRecord.isTraceRecordingEnabled())
         {
             Zydis instruction;
             unsigned char data[MAX_DISASM_BUFFER];
@@ -739,35 +742,4 @@ void _dbg_dbgtraceexecute(duint CIP)
         }
     }
     TraceRecord.increaseInstructionCounter();
-}
-
-unsigned int _dbg_dbggetTraceRecordHitCount(duint address)
-{
-    return TraceRecord.getHitCount(address);
-}
-
-TRACERECORDBYTETYPE _dbg_dbggetTraceRecordByteType(duint address)
-{
-    return (TRACERECORDBYTETYPE)TraceRecord.getByteType(address);
-}
-
-bool _dbg_dbgsetTraceRecordType(duint pageAddress, TRACERECORDTYPE type)
-{
-    return TraceRecord.setTraceRecordType(pageAddress, (TraceRecordManager::TraceRecordType)type);
-}
-
-TRACERECORDTYPE _dbg_dbggetTraceRecordType(duint pageAddress)
-{
-    return (TRACERECORDTYPE)TraceRecord.getTraceRecordType(pageAddress);
-}
-
-// When disabled, file name is not relevant and can be NULL
-bool _dbg_dbgenableRunTrace(bool enabled, const char* fileName)
-{
-    return TraceRecord.enableRunTrace(enabled, fileName);
-}
-
-bool _dbg_dbgisRunTraceEnabled()
-{
-    return TraceRecord.isRunTraceEnabled();
 }

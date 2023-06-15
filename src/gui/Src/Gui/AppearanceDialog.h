@@ -1,5 +1,4 @@
-#ifndef APPEARANCEDIALOG_H
-#define APPEARANCEDIALOG_H
+#pragma once
 
 #include <QAction>
 #include <QDialog>
@@ -11,6 +10,8 @@ namespace Ui
 {
     class AppearanceDialog;
 }
+
+class QTreeWidgetItem;
 
 class AppearanceDialog : public QDialog
 {
@@ -88,6 +89,8 @@ private:
         QString propertyName;
         QString colorName;
         QString backgroundColorName;
+        QString defaultBackgroundColorName;
+        QString defaultFontName;
     };
 
     QList<ColorInfo> colorInfoList;
@@ -99,9 +102,13 @@ private:
 
     QAction* defaultValueAction;
     QAction* currentSettingAction;
+    QTreeWidgetItem* currentCategory;
+    QString currentBackgroundColorName;
+    QString currentFontName;
 
     bool isInit;
 
+    void colorInfoListCategory(QString categoryName, const QString & currentBackgroundColorName, const QString & currentFontName);
     void colorInfoListAppend(QString propertyName, QString colorName, QString backgroundColorName);
     void colorInfoListInit();
     void fontInit();
@@ -109,5 +116,3 @@ private:
     void selectColor(QLineEdit* lineEdit, QColorDialog::ColorDialogOptions options = QColorDialog::ColorDialogOptions());
     static QString colorToString(const QColor & color);
 };
-
-#endif // APPEARANCEDIALOG_H

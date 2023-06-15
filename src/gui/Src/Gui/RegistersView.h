@@ -1,5 +1,4 @@
-#ifndef REGISTERSVIEW_H
-#define REGISTERSVIEW_H
+#pragma once
 
 #include <QScrollArea>
 #include <QSet>
@@ -169,6 +168,7 @@ protected:
 protected slots:
     void InitMappings();
     void fontsUpdatedSlot();
+    void shutdownSlot();
     QString getRegisterLabel(REGISTER_NAME);
     int CompareRegisters(const REGISTER_NAME reg_name, REGDUMP* regdump1, REGDUMP* regdump2);
     SIZE_T GetSizeRegister(const REGISTER_NAME reg_name);
@@ -208,7 +208,6 @@ protected:
     QSet<REGISTER_NAME> mLABELDISPLAY;
     QSet<REGISTER_NAME> mONLYMODULEANDLABELDISPLAY;
     QSet<REGISTER_NAME> mUNDODISPLAY;
-    QSet<REGISTER_NAME> mSETONEZEROTOGGLE;
     QSet<REGISTER_NAME> mMODIFYDISPLAY;
     QSet<REGISTER_NAME> mFIELDVALUE;
     QSet<REGISTER_NAME> mTAGWORD;
@@ -271,5 +270,3 @@ protected:
     QAction* SIMDUQWord;
     QAction* SIMDHQWord;
 };
-
-#endif // REGISTERSVIEW_H

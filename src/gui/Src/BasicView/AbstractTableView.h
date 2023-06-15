@@ -1,5 +1,4 @@
-#ifndef ABSTRACTTABLEVIEW_H
-#define ABSTRACTTABLEVIEW_H
+#pragma once
 
 #include <QScrollBar>
 #include <QAbstractScrollArea>
@@ -144,6 +143,8 @@ public slots:
     // ScrollBar Management
     void vertSliderActionSlot(int action);
 
+    void editColumnDialog();
+
 protected slots:
     void ShowDisassemblyPopup(duint addr, int x, int y); // this should probably be a slot, but doesn't need emit fixes (it's already used correctly)
     void timerEvent(QTimerEvent* event);
@@ -153,7 +154,7 @@ private slots:
     void updateColorsSlot();
     void updateFontsSlot();
     void updateShortcutsSlot();
-    void closeSlot();
+    void shutdownSlot();
 
 private:
     struct ColumnResizingData
@@ -211,7 +212,6 @@ private:
     bool mShouldReload;
     bool mDrawDebugOnly;
     bool mPopupEnabled;
-    bool mAllowPainting;
     int mPopupTimer;
 
     static int mMouseWheelScrollDelta;
@@ -229,6 +229,8 @@ protected:
     QColor mSelectionColor;
     QString mViewName;
 
+    bool mAllowPainting;
+
     // Font metrics
     CachedFontMetrics* mFontMetrics;
     void invalidateCachedFont();
@@ -236,5 +238,3 @@ protected:
     // Disassembly Popup
     DisassemblyPopup* mDisassemblyPopup;
 };
-
-#endif // ABSTRACTTABLEVIEW_H

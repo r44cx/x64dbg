@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>386</width>
-    <height>525</height>
+    <width>365</width>
+    <height>561</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -20,8 +20,8 @@
    <string>Preferences</string>
   </property>
   <property name="windowIcon">
-   <iconset resource="../../resource.qrc">
-    <normaloff>:/icons/images/settings.png</normaloff>:/icons/images/settings.png</iconset>
+   <iconset theme="settings" resource="../../resource.qrc">
+    <normaloff>:/Default/icons/settings.png</normaloff>:/Default/icons/settings.png</iconset>
   </property>
   <property name="autoFillBackground">
    <bool>true</bool>
@@ -40,20 +40,31 @@
        <string>Events</string>
       </attribute>
       <layout class="QGridLayout" name="gridLayout">
-       <item row="2" column="0">
-        <widget class="QCheckBox" name="chkEntryBreakpoint">
+       <item row="9" column="0">
+        <widget class="QCheckBox" name="chkDllLoad">
          <property name="text">
-          <string>Entry Breakpoint*</string>
-         </property>
-         <property name="checked">
-          <bool>false</bool>
+          <string>User DLL Load</string>
          </property>
         </widget>
        </item>
        <item row="2" column="1">
         <widget class="QCheckBox" name="chkThreadStart">
          <property name="text">
-          <string>Thread Start</string>
+          <string>Thread Create</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="0">
+        <widget class="QCheckBox" name="chkExitBreakpoint">
+         <property name="text">
+          <string>Exit Breakpoint*</string>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="1">
+        <widget class="QCheckBox" name="chkThreadNameSet">
+         <property name="text">
+          <string>SetThreadName exceptions</string>
          </property>
         </widget>
        </item>
@@ -61,20 +72,6 @@
         <widget class="QCheckBox" name="chkDllLoadSystem">
          <property name="text">
           <string>System DLL Load</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="1">
-        <widget class="QCheckBox" name="chkThreadEntry">
-         <property name="text">
-          <string>Thread Entry</string>
-         </property>
-        </widget>
-       </item>
-       <item row="11" column="1">
-        <widget class="QCheckBox" name="chkDllUnloadSystem">
-         <property name="text">
-          <string>System DLL Unload</string>
          </property>
         </widget>
        </item>
@@ -91,41 +88,38 @@
          </property>
         </spacer>
        </item>
-       <item row="3" column="0">
-        <widget class="QCheckBox" name="chkExitBreakpoint">
+       <item row="1" column="1">
+        <widget class="QCheckBox" name="chkThreadEntry">
          <property name="text">
-          <string>Exit Breakpoint*</string>
+          <string>Thread Entry</string>
          </property>
         </widget>
        </item>
-       <item row="5" column="0">
-        <widget class="QCheckBox" name="chkTlsCallbacks">
+       <item row="4" column="0">
+        <widget class="QCheckBox" name="chkDebugStrings">
          <property name="text">
-          <string>TLS Callbacks*</string>
-         </property>
-         <property name="checked">
-          <bool>false</bool>
+          <string>Debug Strings</string>
          </property>
         </widget>
        </item>
        <item row="3" column="1">
         <widget class="QCheckBox" name="chkThreadEnd">
          <property name="text">
-          <string>Thread End</string>
+          <string>Thread Exit</string>
          </property>
         </widget>
        </item>
-       <item row="8" column="0">
-        <widget class="QCheckBox" name="chkDllEntry">
+       <item row="5" column="1">
+        <widget class="QCheckBox" name="chkTlsCallbacksSystem">
          <property name="text">
-          <string>DLL Entry</string>
+          <string>System TLS Callbacks*</string>
          </property>
         </widget>
        </item>
-       <item row="9" column="0">
-        <widget class="QCheckBox" name="chkDllLoad">
+       <item row="11" column="1">
+        <widget class="QCheckBox" name="chkDllUnloadSystem">
          <property name="text">
-          <string>DLL Load</string>
+          <string>System DLL Unload</string>
          </property>
         </widget>
        </item>
@@ -133,6 +127,23 @@
         <widget class="QLabel" name="lblBreakOn">
          <property name="text">
           <string>Break on:</string>
+         </property>
+        </widget>
+       </item>
+       <item row="11" column="0">
+        <widget class="QCheckBox" name="chkDllUnload">
+         <property name="text">
+          <string>User DLL Unload</string>
+         </property>
+        </widget>
+       </item>
+       <item row="5" column="0">
+        <widget class="QCheckBox" name="chkTlsCallbacks">
+         <property name="text">
+          <string>User TLS Callbacks*</string>
+         </property>
+         <property name="checked">
+          <bool>false</bool>
          </property>
         </widget>
        </item>
@@ -146,10 +157,13 @@
          </property>
         </widget>
        </item>
-       <item row="5" column="1">
-        <widget class="QCheckBox" name="chkTlsCallbacksSystem">
+       <item row="2" column="0">
+        <widget class="QCheckBox" name="chkEntryBreakpoint">
          <property name="text">
-          <string>System TLS Callbacks*</string>
+          <string>Entry Breakpoint*</string>
+         </property>
+         <property name="checked">
+          <bool>false</bool>
          </property>
         </widget>
        </item>
@@ -160,17 +174,23 @@
          </property>
         </widget>
        </item>
-       <item row="11" column="0">
-        <widget class="QCheckBox" name="chkDllUnload">
+       <item row="8" column="0">
+        <widget class="QCheckBox" name="chkDllEntry">
          <property name="text">
-          <string>DLL Unload</string>
+          <string>User DLL Entry</string>
          </property>
         </widget>
        </item>
-       <item row="12" column="0">
-        <widget class="QCheckBox" name="chkDebugStrings">
+       <item row="14" column="1">
+        <widget class="QLabel" name="label_2">
+         <property name="layoutDirection">
+          <enum>Qt::LeftToRight</enum>
+         </property>
          <property name="text">
-          <string>Debug Strings</string>
+          <string>* Requires debuggee restart</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
          </property>
         </widget>
        </item>
@@ -334,13 +354,6 @@
         </widget>
        </item>
        <item>
-        <widget class="QCheckBox" name="chkTraceRecordEnabledDuringTrace">
-         <property name="text">
-          <string>Enable Trace Record Recording during a Trace</string>
-         </property>
-        </widget>
-       </item>
-       <item>
         <widget class="QCheckBox" name="chkSkipInt3Stepping">
          <property name="text">
           <string>Skip INT3 stepping</string>
@@ -379,6 +392,13 @@
         <widget class="QCheckBox" name="chkNoWow64SingleStepWorkaround">
          <property name="text">
           <string>Disable WOW64 Single Step Workaround</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="chkDisableAslr">
+         <property name="text">
+          <string>Disable ASLR</string>
          </property>
         </widget>
        </item>
@@ -450,13 +470,26 @@
          <property name="orientation">
           <enum>Qt::Vertical</enum>
          </property>
+         <property name="sizeType">
+          <enum>QSizePolicy::MinimumExpanding</enum>
+         </property>
          <property name="sizeHint" stdset="0">
           <size>
            <width>20</width>
-           <height>40</height>
+           <height>0</height>
           </size>
          </property>
         </spacer>
+       </item>
+       <item>
+        <widget class="QLabel" name="label_4">
+         <property name="text">
+          <string>* Requires debugger restart</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+         </property>
+        </widget>
        </item>
       </layout>
      </widget>
@@ -520,6 +553,16 @@
             <widget class="QPushButton" name="btnIgnoreLast">
              <property name="text">
               <string>Ignore &amp;Last</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnIgnoreFirst">
+             <property name="toolTip">
+              <string>Ignore all first-chance exceptions, don't print log, pass them to the debuggee and only break on second-chance exceptions.</string>
+             </property>
+             <property name="text">
+              <string>Ignore First-Chance</string>
              </property>
             </widget>
            </item>
@@ -889,6 +932,23 @@
         </widget>
        </item>
        <item>
+        <widget class="QCheckBox" name="chkQtHighDpiScaling">
+         <property name="toolTip">
+          <string>Disabling this option will tell Windows that x64dbg is DPI unaware. This might result in blurry results in some configurations.</string>
+         </property>
+         <property name="text">
+          <string>Qt High DPI Scaling</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="chkWindowLongPath">
+         <property name="text">
+          <string>Full executable path in title</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <spacer name="verticalSpacerGUI">
          <property name="orientation">
           <enum>Qt::Vertical</enum>
@@ -968,13 +1028,6 @@
           </layout>
          </item>
          <item>
-          <widget class="QCheckBox" name="chkConfirmBeforeAtt">
-           <property name="text">
-            <string>Confirm before attaching</string>
-           </property>
-          </widget>
-         </item>
-         <item>
           <widget class="QLabel" name="lblAdminWarning">
            <property name="text">
             <string>&lt;font color=&quot;red&quot;&gt;DIE SCUM!&lt;/font&gt;</string>
@@ -1043,6 +1096,16 @@
          </property>
         </spacer>
        </item>
+       <item>
+        <widget class="QLabel" name="label_3">
+         <property name="text">
+          <string>* Requires debuggee restart</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+         </property>
+        </widget>
+       </item>
       </layout>
      </widget>
     </widget>
@@ -1108,7 +1171,6 @@
   <tabstop>editSymbolCache</tabstop>
   <tabstop>chkSetJIT</tabstop>
   <tabstop>editJIT</tabstop>
-  <tabstop>chkConfirmBeforeAtt</tabstop>
   <tabstop>btnSave</tabstop>
   <tabstop>btnCancel</tabstop>
  </tabstops>
@@ -1123,8 +1185,8 @@
    <slot>reject()</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>358</x>
-     <y>252</y>
+     <x>420</x>
+     <y>622</y>
     </hint>
     <hint type="destinationlabel">
      <x>357</x>
@@ -1139,8 +1201,8 @@
    <slot>accept()</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>286</x>
-     <y>250</y>
+     <x>320</x>
+     <y>622</y>
     </hint>
     <hint type="destinationlabel">
      <x>279</x>

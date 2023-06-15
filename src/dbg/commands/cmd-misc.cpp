@@ -15,14 +15,21 @@
 
 bool cbInstrChd(int argc, char* argv[])
 {
-    if(IsArgumentsLessThan(argc, 2))
-        return false;
+    String directory;
+    if(argc < 2)
+    {
+        directory = szProgramDir;
+    }
+    else
+    {
+        directory = argv[1];
+    }
     if(!DirExists(argv[1]))
     {
-        dputs(QT_TRANSLATE_NOOP("DBG", "Directory doesn't exist"));
+        dprintf(QT_TRANSLATE_NOOP("DBG", "Directory '%s' doesn't exist\n"), directory.c_str());
         return false;
     }
-    SetCurrentDirectoryW(StringUtils::Utf8ToUtf16(argv[1]).c_str());
+    SetCurrentDirectoryW(StringUtils::Utf8ToUtf16(directory).c_str());
     dputs(QT_TRANSLATE_NOOP("DBG", "Current directory changed!"));
     return true;
 }
@@ -70,7 +77,7 @@ static void cbDebugLoadLibBPX()
     MemFreeRemote(ASMAddr);
     ThreadResumeAll();
     //update GUI
-    DebugUpdateGuiSetStateAsync(GetContextDataEx(hActiveThread, UE_CIP), true);
+    DebugUpdateGuiSetStateAsync(GetContextDataEx(hActiveThread, UE_CIP), paused);
     //lock
     lock(WAITID_RUN);
     dbgsetforeground();
@@ -138,7 +145,7 @@ bool cbDebugLoadLib(int argc, char* argv[])
         return false;
     }
 
-    if(!SetBPX(ASMAddr + sizeof(loader) - 1, UE_SINGLESHOOT | UE_BREAKPOINT_TYPE_INT3, (void*)cbDebugLoadLibBPX))
+    if(!SetBPX(ASMAddr + sizeof(loader) - 1, UE_SINGLESHOOT | UE_BREAKPOINT_TYPE_INT3, cbDebugLoadLibBPX))
     {
         MemFreeRemote(ASMAddr);
         dputs(QT_TRANSLATE_NOOP("DBG", "Error: couldn't SetBPX"));
@@ -148,7 +155,12 @@ bool cbDebugLoadLib(int argc, char* argv[])
     ThreadSuspendAll();
     GetFullContextDataEx(LoadLibThread, &backupctx);
     SetContextDataEx(LoadLibThread, UE_CIP, ASMAddr);
+#ifdef _WIN64
+    // Allocate shadow space + align
+    SetContextDataEx(LoadLibThread, UE_CSP, (backupctx.csp - 32) & ~0xF);
+#else
     SetContextDataEx(LoadLibThread, UE_CSP, backupctx.csp & ~0xF);
+#endif // _WIN64
     ResumeThread(LoadLibThread);
 
     unlock(WAITID_RUN);
@@ -170,7 +182,7 @@ static void cbDebugFreeLibBPX()
     MemFreeRemote(ASMAddr);
     ThreadResumeAll();
     //update GUI
-    DebugUpdateGuiSetStateAsync(GetContextDataEx(hActiveThread, UE_CIP), true);
+    DebugUpdateGuiSetStateAsync(GetContextDataEx(hActiveThread, UE_CIP), paused);
     //lock
     lock(WAITID_RUN);
     dbgsetforeground();
@@ -237,7 +249,7 @@ bool cbDebugFreeLib(int argc, char* argv[])
         return false;
     }
 
-    if(!SetBPX(ASMAddr + sizeof(loader) - 1, UE_SINGLESHOOT | UE_BREAKPOINT_TYPE_INT3, (void*)cbDebugFreeLibBPX))
+    if(!SetBPX(ASMAddr + sizeof(loader) - 1, UE_SINGLESHOOT | UE_BREAKPOINT_TYPE_INT3, cbDebugFreeLibBPX))
     {
         MemFreeRemote(ASMAddr);
         dputs(QT_TRANSLATE_NOOP("DBG", "Error: couldn't SetBPX"));
@@ -303,7 +315,7 @@ bool cbInstrGpa(int argc, char* argv[])
 bool cbDebugSetJIT(int argc, char* argv[])
 {
     arch actual_arch = notfound;
-    char* jit_debugger_cmd = "";
+    const char* jit_debugger_cmd = "";
     Memory<char*> oldjit(MAX_SETTING_SIZE + 1);
     char path[JIT_ENTRY_DEF_SIZE];
     if(!BridgeIsProcessElevated())
@@ -327,7 +339,7 @@ bool cbDebugSetJIT(int argc, char* argv[])
         if(!_strcmpi(argv[1], "old"))
         {
             jit_debugger_cmd = oldjit();
-            if(!BridgeSettingGet("JIT", "Old", jit_debugger_cmd))
+            if(!BridgeSettingGet("JIT", "Old", oldjit()))
             {
                 dputs(QT_TRANSLATE_NOOP("DBG", "Error there is no old JIT entry stored."));
                 return false;
@@ -368,7 +380,7 @@ bool cbDebugSetJIT(int argc, char* argv[])
         {
             jit_debugger_cmd = oldjit();
 
-            if(!BridgeSettingGet("JIT", "Old", jit_debugger_cmd))
+            if(!BridgeSettingGet("JIT", "Old", oldjit()))
             {
                 dputs(QT_TRANSLATE_NOOP("DBG", "Error there is no old JIT entry stored."));
                 return false;
@@ -624,7 +636,7 @@ bool cbDebugGetCmdline(int argc, char* argv[])
     char* cmd_line;
     cmdline_error_t cmdline_error = { (cmdline_error_type_t)0, 0 };
 
-    if(!dbggetcmdline(&cmd_line, &cmdline_error))
+    if(!dbggetcmdline(&cmd_line, &cmdline_error, fdProcessInfo->hProcess))
     {
         showcommandlineerror(&cmdline_error);
         return false;

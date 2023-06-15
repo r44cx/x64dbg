@@ -1,5 +1,4 @@
-#ifndef SCRIPTVIEW_H
-#define SCRIPTVIEW_H
+#pragma once
 
 #include "StdTable.h"
 
@@ -46,7 +45,7 @@ public slots:
     void question(QString message);
     void enableHighlighting(bool enable);
     void messageResult(int result);
-    void closeSlot();
+    void shutdownSlot();
 
 private:
     //private functions
@@ -64,5 +63,3 @@ private:
     MRUList* mMRUList;
     LineEditDialog* mCmdLineEdit;
 };
-
-#endif // SCRIPTVIEW_H

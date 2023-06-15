@@ -118,7 +118,10 @@ struct TraceState
         logCondition = nullptr;
         if(text.empty())
             return true;
-        logCondition = new TextCondition(expression, text);
+        if(expression.empty())
+            logCondition = new TextCondition("1", text);
+        else
+            logCondition = new TextCondition(expression, text);
         return logCondition->condition.IsValidExpression();
     }
 
@@ -138,7 +141,12 @@ struct TraceState
         cmdCondition = nullptr;
         if(text.empty())
             return true;
-        cmdCondition = new TextCondition(expression, text);
+        if(expression.empty())
+        {
+            cmdCondition = new TextCondition(traceCondition->condition.GetExpression(), text);
+        }
+        else
+            cmdCondition = new TextCondition(expression, text);
         return cmdCondition->condition.IsValidExpression();
     }
 
@@ -150,21 +158,6 @@ struct TraceState
     const String & CmdText() const
     {
         return cmdCondition ? cmdCondition->text : emptyString;
-    }
-
-    bool InitSwitchCondition(const String & expression)
-    {
-        delete switchCondition;
-        switchCondition = nullptr;
-        if(expression.empty())
-            return true;
-        switchCondition = new TextCondition(expression, "");
-        return switchCondition->condition.IsValidExpression();
-    }
-
-    char EvaluateSwitch() const
-    {
-        return switchCondition ? switchCondition->Evaluate() : 0;
     }
 
     void SetLogFile(const char* fileName)
@@ -190,8 +183,6 @@ struct TraceState
         logCondition = nullptr;
         delete cmdCondition;
         cmdCondition = nullptr;
-        delete switchCondition;
-        switchCondition = nullptr;
         logFile.clear();
         delete logWriter;
         logWriter = nullptr;
@@ -203,7 +194,6 @@ private:
     TraceCondition* traceCondition = nullptr;
     TextCondition* logCondition = nullptr;
     TextCondition* cmdCondition = nullptr;
-    TextCondition* switchCondition = nullptr;
     String emptyString;
     WString logFile;
     BufferedWriter* logWriter = nullptr;

@@ -295,19 +295,19 @@ QString HexDump::makeCopyText()
 void HexDump::setupCopyMenu()
 {
     // Copy -> Data
-    mCopySelection = new QAction(DIcon("copy_selection.png"), tr("&Selected lines"), this);
+    mCopySelection = new QAction(DIcon("copy_selection"), tr("&Selected lines"), this);
     connect(mCopySelection, SIGNAL(triggered(bool)), this, SLOT(copySelectionSlot()));
     mCopySelection->setShortcutContext(Qt::WidgetShortcut);
     addAction(mCopySelection);
 
     // Copy -> Address
-    mCopyAddress = new QAction(DIcon("copy_address.png"), tr("&Address"), this);
+    mCopyAddress = new QAction(DIcon("copy_address"), tr("&Address"), this);
     connect(mCopyAddress, SIGNAL(triggered()), this, SLOT(copyAddressSlot()));
     mCopyAddress->setShortcutContext(Qt::WidgetShortcut);
     addAction(mCopyAddress);
 
     // Copy -> RVA
-    mCopyRva = new QAction(DIcon("copy_address.png"), "&RVA", this);
+    mCopyRva = new QAction(DIcon("copy_address"), "&RVA", this);
     connect(mCopyRva, SIGNAL(triggered()), this, SLOT(copyRvaSlot()));
     mCopyRva->setShortcutContext(Qt::WidgetShortcut);
     addAction(mCopyRva);
@@ -553,7 +553,7 @@ void HexDump::wheelEvent(QWheelEvent* event)
 void HexDump::keyPressEvent(QKeyEvent* event)
 {
     int key = event->key();
-    dsint selStart = getInitialSelection();
+    auto selStart = getInitialSelection();
     char granularity = 1; //Size of a data word.
     char action = 0; //Where to scroll the scrollbar
     Qt::KeyboardModifiers modifiers = event->modifiers();
@@ -565,7 +565,7 @@ void HexDump::keyPressEvent(QKeyEvent* event)
             break;
         }
     }
-    if(modifiers == 0) //No modifier
+    if(modifiers == Qt::NoModifier)
     {
         //selStart -= selStart % granularity; //Align the selection to word boundary. TODO: Unaligned data?
         switch(key)
@@ -634,6 +634,8 @@ void HexDump::keyPressEvent(QKeyEvent* event)
             action = 0;
             verticalScrollBar()->triggerAction(QAbstractSlider::SliderSingleStepAdd);
             break;
+        default:
+            AbstractTableView::keyPressEvent(event);
         }
         if(action != 0)
         {
@@ -645,6 +647,10 @@ void HexDump::keyPressEvent(QKeyEvent* event)
     else if(modifiers == Qt::ShiftModifier)
     {
         //TODO
+    }
+    else
+    {
+        AbstractTableView::keyPressEvent(event);
     }
     /*
         Let's keep the old code for a while until nobody remembers previous behaviour.
@@ -1177,9 +1183,9 @@ void HexDump::twordToString(duint rva, void* tword, TwordViewMode mode, RichText
     richText.text = wStr;
 }
 
-int HexDump::getSizeOf(DataSize size)
+size_t HexDump::getSizeOf(DataSize size)
 {
-    return int(size);
+    return size_t(size);
 }
 
 static int getStringMaxLength(HexDump::DataDescriptor desc)

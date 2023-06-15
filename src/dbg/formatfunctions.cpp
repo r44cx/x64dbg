@@ -72,11 +72,13 @@ static FORMATRESULT memoryFormatter(char* dest, size_t destCount, int argc, char
         return FORMAT_ERROR_MESSAGE;
     }
     std::vector<Char> data(size);
-    if(!MemRead(addr, data.data(), size * sizeof(Char)))
+    duint read = 0;
+    if(!MemRead(addr, data.data(), size * sizeof(Char), &read) && read == 0)
     {
         strcpy_s(dest, destCount, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Failed to read memory...")));
         return FORMAT_ERROR_MESSAGE;
     }
+    data.resize(read);
     auto result = format(data);
     if(result.size() > destCount)
         return FORMAT_BUFFER_TOO_SMALL;
@@ -225,6 +227,27 @@ void FormatFunctions::Init()
         for(duint i = 0; i < size; i++)
             result += StringUtils::sprintf("%02X", data[i]);
         return formatcpy_s(dest, destCount, result.c_str());
+    });
+
+    Register("comment", [](char* dest, size_t destCount, int argc, char* argv[], duint addr, void* userdata)
+    {
+        char comment[MAX_COMMENT_SIZE] = "";
+        if(DbgGetCommentAt(addr, comment))
+        {
+            if(comment[0] == '\1') //automatic comment
+                return formatcpy_s(dest, destCount, comment + 1);
+            else
+                return formatcpy_s(dest, destCount, comment);
+        }
+        return FORMAT_ERROR;
+    });
+
+    Register("label", [](char* dest, size_t destCount, int argc, char* argv[], duint addr, void* userdata)
+    {
+        char label[MAX_LABEL_SIZE] = "";
+        if(DbgGetLabelAt(addr, SEG_DEFAULT, label))
+            return formatcpy_s(dest, destCount, label);
+        return FORMAT_ERROR;
     });
 }
 

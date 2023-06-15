@@ -35,24 +35,21 @@ bool cbScriptCmd(int argc, char* argv[])
     if(IsArgumentsLessThan(argc, 2))
         return false;
     auto scriptcmd = strchr(argv[0], ' ');
+    if(scriptcmd == nullptr)
+        return false;
     while(isspace(*scriptcmd))
         scriptcmd++;
     return scriptcmdexec(scriptcmd);
 }
 
-bool cbInstrLog(int argc, char* argv[])
+static bool cbGenericLog(int argc, char* argv[], void(*logputs)(const char* msg))
 {
-    auto logputs = [](const char* msg)
-    {
-        dputs_untranslated(msg);
-        scriptlog(msg);
-    };
-    if(argc == 1) //just log newline
+    if(argc == 1)  //just log newline
     {
         logputs("");
         return true;
     }
-    if(argc == 2) //inline logging: log "format {rax}"
+    if(argc == 2)  //inline logging: log "format {rax}"
     {
         logputs(stringformatinline(argv[1]).c_str());
     }
@@ -64,6 +61,24 @@ bool cbInstrLog(int argc, char* argv[])
         logputs(stringformat(argv[1], formatArgs).c_str());
     }
     return true;
+}
+
+bool cbInstrLog(int argc, char* argv[])
+{
+    return cbGenericLog(argc, argv, [](const char* msg)
+    {
+        dputs_untranslated(msg);
+        scriptlog(msg);
+    });
+}
+
+bool cbInstrHtmlLog(int argc, char* argv[])
+{
+    return cbGenericLog(argc, argv, [](const char* msg)
+    {
+        dprint_untranslated_html(msg);
+        dprint_untranslated_html("\n");
+    });
 }
 
 bool cbInstrPrintStack(int argc, char* argv[])

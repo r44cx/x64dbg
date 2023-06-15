@@ -7,6 +7,7 @@
 #include <QTranslator>
 #include <QTextStream>
 #include <QLibraryInfo>
+#include <QDebug>
 #include "MiscUtil.h"
 
 MyApplication::MyApplication(int & argc, char** argv)
@@ -31,6 +32,14 @@ bool MyApplication::notify(QObject* receiver, QEvent* event)
     bool done = true;
     try
     {
+        if(event->type() == QEvent::WindowActivate && receiver->isWidgetType())
+        {
+            auto widget = (QWidget*)receiver;
+            if((widget->windowFlags() & Qt::Window) == Qt::Window)
+            {
+                MainWindow::updateDarkTitleBar(widget);
+            }
+        }
         done = QApplication::notify(receiver, event);
     }
     catch(const std::exception & ex)
@@ -65,12 +74,72 @@ static bool isValidLocale(const QString & locale)
     return false;
 }
 
+// This function doesn't appear to have any effect when Qt DPI scaling is enabled.
+// When scaling is disabled it drastically improves the results though.
+static void setDpiUnaware()
+{
+    // https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setprocessdpiawarenesscontext
+    typedef unsigned int(WINAPI * pfnSetProcessDpiAwarenessContext)(size_t value);
+    static pfnSetProcessDpiAwarenessContext pSetProcessDpiAwarenessContext =
+        (pfnSetProcessDpiAwarenessContext)GetProcAddress(GetModuleHandleW(L"user32.dll"), "SetProcessDpiAwarenessContext");
+    if(pSetProcessDpiAwarenessContext)
+    {
+        // It's unclear if there is any benefit to the GDI scaling, but it should work the best in theory.
+        pSetProcessDpiAwarenessContext(/* DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED */ -5);
+        if(GetLastError() == ERROR_INVALID_PARAMETER)
+        {
+            // Fall back to unaware if the option doesn't exist.
+            pSetProcessDpiAwarenessContext(/* DPI_AWARENESS_CONTEXT_UNAWARE */ -1);
+        }
+    }
+}
+
+/*
+Some resources:
+- https://www.programmersought.com/article/89186999411/
+- https://github.com/COVESA/dlt-viewer/issues/205
+- https://vicrucann.github.io/tutorials/osg-qt-high-dpi/
+- https://forum.freecadweb.org/viewtopic.php?t=52307
+- https://wiki.freecadweb.org/HiDPI_support
+- https://doc.qt.io/qt-5/highdpi.html#high-dpi-support-in-qt
+*/
+static void handleHighDpiScaling()
+{
+    // If the user messes with the Qt environment variables, do not set anything
+    if(qEnvironmentVariableIsSet("QT_DEVICE_PIXEL_RATIO") // legacy in 5.6, but still functional
+            || qEnvironmentVariableIsSet("QT_AUTO_SCREEN_SCALE_FACTOR")
+            || qEnvironmentVariableIsSet("QT_SCALE_FACTOR")
+            || qEnvironmentVariableIsSet("QT_SCREEN_SCALE_FACTORS")
+            || qEnvironmentVariableIsSet("QT_ENABLE_HIGHDPI_SCALING")
+            || qEnvironmentVariableIsSet("QT_SCALE_FACTOR_ROUNDING_POLICY"))
+    {
+        qDebug() << "Detected environment variables related to Qt scaling, skipping High DPI handling";
+        return;
+    }
+
+    duint enableQtHighDpiScaling = true;
+    BridgeSettingGetUint("Gui", "EnableQtHighDpiScaling", &enableQtHighDpiScaling);
+
+    if(enableQtHighDpiScaling)
+    {
+        QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+    }
+    else
+    {
+        // This enables Windows scaling the application automatically
+        setDpiUnaware();
+
+        // These options don't seem to do anything, but the Qt documentation recommends it
+        putenv("QT_AUTO_SCREEN_SCALE_FACTOR=1");
+        QCoreApplication::setAttribute(Qt::AA_DisableHighDpiScaling);
+    }
+}
+
 int main(int argc, char* argv[])
 {
-    qputenv("QT_AUTO_SCREEN_SCALE_FACTOR", "1");
-    QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+    handleHighDpiScaling();
     MyApplication application(argc, argv);
-    MainWindow::loadSelectedStyle(true);
+
 #if QT_VERSION < QT_VERSION_CHECK(5,0,0)
     QAbstractEventDispatcher::instance(application.thread())->setEventFilter(MyApplication::globalEventFilter);
 #else
@@ -112,6 +181,9 @@ int main(int argc, char* argv[])
     appPalette.setColor(QPalette::Link, ConfigColor("LinkColor"));
     application.setPalette(appPalette);
 
+    // Load the selected theme
+    MainWindow::loadSelectedTheme(true);
+
     // Register custom data types
     qRegisterMetaType<dsint>("dsint");
     qRegisterMetaType<duint>("duint");
@@ -141,7 +213,7 @@ int main(int argc, char* argv[])
     if(errormsg)
     {
         QMessageBox msg(QMessageBox::Critical, QObject::tr("DbgInit Error!"), QString(errormsg));
-        msg.setWindowIcon(DIcon("compile-error.png"));
+        msg.setWindowIcon(DIcon("compile-error"));
         msg.setWindowFlags(msg.windowFlags() & (~Qt::WindowContextHelpButtonHint));
         msg.exec();
         exit(1);

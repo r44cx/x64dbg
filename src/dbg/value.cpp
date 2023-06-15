@@ -322,7 +322,7 @@ static bool isregister(const char* string)
 
 typedef struct
 {
-    char* name;
+    const char* name;
     unsigned int flag;
 
 } FLAG_NAME_VALUE_TABLE_t;
@@ -1401,42 +1401,27 @@ bool setregister(const char* string, duint value)
     return false;
 }
 
-duint SafeGetProcAddress(HMODULE hModule, const char* lpProcName)
-{
-    __try
-    {
-        return duint(GetProcAddress(hModule, lpProcName));
-    }
-    __except(EXCEPTION_EXECUTE_HANDLER)
-    {
-        return 0;
-    }
-}
-
 /**
 \brief Gets the address of an API from a name.
 \param name The name of the API, see the command help for more information about valid constructions.
 \param [out] value The address of the retrieved API. Cannot be null.
-\param [out] value_size This function sets this value to the size of the address, sizeof(duint).
-\param printall true to print all possible API values to the console.
-\param silent true to have no console output. If true, the \p printall parameter is ignored.
-\param [out] hexonly If set to true, the values should be printed in hex only. Usually this function sets it to true.
+\param silent true to have no console output.
 \return true if the API was found and a value retrieved, false otherwise.
 */
-bool valapifromstring(const char* name, duint* value, int* value_size, bool printall, bool silent, bool* hexonly)
+bool valapifromstring(const char* name, duint* value, bool silent)
 {
     if(!value || !DbgIsDebugging())
         return false;
-    //explicit API handling
+    //explicit API handling 'module:export'
     const char* apiname = strchr(name, ':'); //the ':' character cannot be in a path: https://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx#naming_conventions
-    bool noexports = false;
+    bool resolveForwards = true;
     if(!apiname) //not found
     {
         apiname = strstr(name, "..") ? strchr(name, '.') : strrchr(name, '.'); //kernel32.GetProcAddress support
         if(!apiname) //not found
         {
             apiname = strchr(name, '?'); //the '?' character cannot be in a path either
-            noexports = true;
+            resolveForwards = false;
         }
     }
     if(apiname)
@@ -1460,154 +1445,101 @@ bool valapifromstring(const char* name, duint* value, int* value_size, bool prin
         apiname++;
         if(!strlen(apiname))
             return false;
+
+        SHARED_ACQUIRE(LockModules);
         duint modbase = ModBaseFromName(modname);
-        char szModPath[MAX_PATH];
-        if(!ModPathFromAddr(modbase, szModPath, _countof(szModPath)))
+        auto modInfo = ModInfoFromAddr(modbase);
+        if(modInfo == nullptr)
+            return false;
+
+        duint addr = resolveForwards ? modInfo->getProcAddress(apiname) : 0;
+        if(addr != 0)
         {
-            if(!silent)
-                dprintf(QT_TRANSLATE_NOOP("DBG", "Could not get filename of module %p\n"), modbase);
+            *value = addr;
+            return true;
+        }
+
+        if(scmp(apiname, "base") || scmp(apiname, "imagebase") || scmp(apiname, "header")) //get loaded base
+            addr = modbase;
+        else if(scmp(apiname, "entrypoint") || scmp(apiname, "entry") || scmp(apiname, "oep") || scmp(apiname, "ep")) //get entry point
+            addr = modInfo->entry;
+        else if(*apiname == '$') //RVA
+        {
+            duint rva;
+            if(valfromstring(apiname + 1, &rva))
+                addr = modbase + rva;
+        }
+        else if(*apiname == '#') //File Offset
+        {
+            duint offset;
+            if(valfromstring(apiname + 1, &offset))
+                addr = valfileoffsettova(modname, offset);
         }
         else
         {
-            HMODULE mod = LoadLibraryExW(StringUtils::Utf8ToUtf16(szModPath).c_str(), 0, DONT_RESOLVE_DLL_REFERENCES);
-            if(!mod)
+            if(!resolveForwards) //get the exported functions with the '?' delimiter
             {
-                if(!silent)
-                    dprintf(QT_TRANSLATE_NOOP("DBG", "Unable to load library %s\n"), szModPath);
+                addr = modInfo->getProcAddress(apiname, 0);
             }
             else
             {
-                duint addr = noexports ? 0 : SafeGetProcAddress(mod, apiname);
-                if(addr) //found exported function
-                    addr = modbase + (addr - (duint)mod); //correct for loaded base
-                else //not found
+                // module:ordinal
+                duint ordinal;
+                auto radix = 16;
+                if(*apiname == '.') //decimal
+                    radix = 10, apiname++;
+                if(convertNumber(apiname, ordinal, radix) && ordinal <= 0xFFFF)
                 {
-                    if(scmp(apiname, "base") || scmp(apiname, "imagebase") || scmp(apiname, "header")) //get loaded base
+                    auto index = ordinal - modInfo->exportOrdinalBase;
+                    if(index < modInfo->exports.size()) //found exported function
+                        addr = modbase + modInfo->exports[index].rva;
+                    else if(ordinal == 0) //support for getting the image base using <modname>:0
                         addr = modbase;
-                    else if(scmp(apiname, "entrypoint") || scmp(apiname, "entry") || scmp(apiname, "oep") || scmp(apiname, "ep")) //get entry point
-                        addr = ModEntryFromAddr(modbase);
-                    else if(*apiname == '$') //RVA
-                    {
-                        duint rva;
-                        if(valfromstring(apiname + 1, &rva))
-                            addr = modbase + rva;
-                    }
-                    else if(*apiname == '#') //File Offset
-                    {
-                        duint offset;
-                        if(valfromstring(apiname + 1, &offset))
-                            addr = valfileoffsettova(modname, offset);
-                    }
-                    else
-                    {
-                        if(noexports) //get the exported functions with the '?' delimiter
-                        {
-                            addr = SafeGetProcAddress(mod, apiname);
-                            if(addr) //found exported function
-                                addr = modbase + (addr - (duint)mod); //correct for loaded base
-                        }
-                        else
-                        {
-                            duint ordinal;
-                            auto radix = 16;
-                            if(*apiname == '.') //decimal
-                                radix = 10, apiname++;
-                            if(convertNumber(apiname, ordinal, radix) && ordinal <= 0xFFFF)
-                            {
-                                addr = SafeGetProcAddress(mod, LPCSTR(ordinal));
-                                if(addr) //found exported function
-                                    addr = modbase + (addr - (duint)mod); //correct for loaded base
-                                else if(!ordinal) //support for getting the image base using <modname>:0
-                                    addr = modbase;
-                            }
-                        }
-                    }
-                }
-                FreeLibrary(mod);
-                if(addr) //found!
-                {
-                    if(value_size)
-                        *value_size = sizeof(duint);
-                    if(hexonly)
-                        *hexonly = true;
-                    *value = addr;
-                    return true;
                 }
             }
         }
-        return false;
-    }
-    int found = 0;
-    int kernel32 = -1;
-    DWORD cbNeeded = 0;
-    Memory<duint*> addrfound;
-    if(EnumProcessModules(fdProcessInfo->hProcess, 0, 0, &cbNeeded))
-    {
-        addrfound.realloc(cbNeeded * sizeof(duint), "valapifromstring:addrfound");
-        Memory<HMODULE*> hMods(cbNeeded * sizeof(HMODULE), "valapifromstring:hMods");
-        if(EnumProcessModules(fdProcessInfo->hProcess, hMods(), cbNeeded, &cbNeeded))
-        {
-            for(unsigned int i = 0; i < cbNeeded / sizeof(HMODULE); i++)
-            {
-                wchar_t szModuleName[MAX_PATH] = L"";
-                if(GetModuleFileNameExW(fdProcessInfo->hProcess, hMods()[i], szModuleName, MAX_PATH))
-                {
-                    wchar_t* szBaseName = wcsrchr(szModuleName, L'\\');
-                    if(szBaseName)
-                    {
-                        szBaseName++;
-                        HMODULE hModule = LoadLibraryExW(szModuleName, 0, DONT_RESOLVE_DLL_REFERENCES);
-                        if(hModule)
-                        {
-                            duint funcAddress = SafeGetProcAddress(hModule, name);
-                            if(funcAddress)
-                            {
-                                if(!_wcsicmp(szBaseName, L"kernel32.dll"))
-                                    kernel32 = found;
-                                duint rva = funcAddress - (duint)hModule;
-                                addrfound()[found] = (duint)hMods()[i] + rva;
-                                found++;
-                            }
-                            FreeLibrary(hModule);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if(!found)
-        return false;
-    if(value_size)
-        *value_size = sizeof(duint);
-    if(hexonly)
-        *hexonly = true;
-    if(kernel32 != -1) //prioritize kernel32 exports
-    {
-        *value = addrfound()[kernel32];
-        if(!printall || silent)
-            return true;
-        for(int i = 0; i < found; i++)
-            if(i != kernel32)
-            {
-                auto symbolic = SymGetSymbolicName(addrfound()[i]);
-                if(symbolic.length())
-                    dprintf_untranslated("%p %s\n", addrfound()[i], symbolic.c_str());
-                else
-                    dprintf_untranslated("%p\n", addrfound()[i]);
-            }
+
+        if(addr == 0)
+            return false;
+
+        *value = addr;
+        return true;
     }
     else
     {
-        *value = *addrfound();
-        if(!printall || silent)
-            return true;
-        for(int i = 1; i < found; i++)
+        // enumerate all modules and look for the export by name
+        size_t kernel32 = -1;
+        std::vector<duint> addrfound;
+        ModEnum([&](const MODINFO & info)
         {
-            auto symbolic = SymGetSymbolicName(addrfound()[i]);
-            if(symbolic.length())
-                dprintf_untranslated("%p %s\n", addrfound()[i], symbolic.c_str());
-            else
-                dprintf_untranslated("%p\n", addrfound()[i]);
+            duint funcAddress = info.getProcAddress(name);
+            if(funcAddress != 0)
+            {
+                if(std::find(addrfound.begin(), addrfound.end(), funcAddress) == addrfound.end())
+                {
+                    if(scmp(info.name, "kernel32") && scmp(info.extension, ".dll"))
+                        kernel32 = addrfound.size();
+                    addrfound.push_back(funcAddress);
+                }
+            }
+        });
+
+        if(addrfound.empty())
+            return false;
+
+        // prioritize kernel32 exports
+        if(kernel32 != -1)
+            std::swap(addrfound[0], addrfound[kernel32]);
+
+        *value = addrfound[0];
+        if(!silent)
+        {
+            // print the other exports we found to the log
+            for(size_t i = 1; i < addrfound.size(); i++)
+            {
+                auto symbolicName = SymGetSymbolicName(addrfound[i], false);
+                dprintf_untranslated("%p %s\n", addrfound[i], symbolicName.c_str());
+            }
         }
     }
     return true;
@@ -1944,7 +1876,7 @@ bool valfromstring_noexpr(const char* string, duint* value, bool silent, bool ba
     if(baseonly)
         return false;
 
-    if(valapifromstring(string, value, value_size, true, silent, hexonly)) //then come APIs
+    if(valapifromstring(string, value, silent)) //then come APIs
         return true;
     else if(LabelFromString(string, value)) //then come labels
         return true;
@@ -1960,6 +1892,8 @@ bool valfromstring_noexpr(const char* string, duint* value, bool silent, bool ba
         duint start;
         return result && FunctionGet(*value, &start, nullptr) && *value == start;
     }
+    else if(*value = ModBaseFromName(string)) // then come modules
+        return true;
 
     if(!silent)
         dprintf(QT_TRANSLATE_NOOP("DBG", "Invalid value: \"%s\"!\n"), string);
@@ -2225,7 +2159,7 @@ static void setfpuvalue(const char* string, duint value)
         switch(*string)
         {
         case '0':
-            registerindex = flags;
+            registerindex = (DWORD)flags;
             break;
 
         case '1':
@@ -2625,7 +2559,7 @@ bool valtostring(const char* string, duint value, bool silent)
         if(strstr(regName(), "ip"))
         {
             auto cip = GetContextDataEx(hActiveThread, UE_CIP);
-            _dbg_dbgtraceexecute(cip);
+            dbgtraceexecute(cip);
             DebugUpdateGuiAsync(cip, false); //update disassembly + register view
         }
         else if(strstr(regName(), "sp")) //update stack

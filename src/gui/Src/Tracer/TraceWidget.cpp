@@ -41,6 +41,8 @@ TraceWidget::TraceWidget(QWidget* parent) :
 
     ui->mTopRightUpperFrameLayout->addWidget(button_changeview);
     ui->mTopRightUpperFrameLayout->addWidget(upperScrollArea);
+    ui->mTopHSplitter->setCollapsible(1, true); // allow collapsing the RegisterView
+
     //info
     ui->mTopLeftLowerFrameLayout->addWidget(mInfo);
     int height = (mInfo->getRowHeight() + 1) * 4;
@@ -87,7 +89,10 @@ void TraceWidget::traceSelectionChanged(unsigned long long selection)
 
 void TraceWidget::updateSlot()
 {
-    mGeneralRegs->setActive(mTraceWidget->isFileOpened());
+    auto fileOpened = mTraceWidget->isFileOpened();
+    mGeneralRegs->setActive(fileOpened);
+    if(!fileOpened)
+        mInfo->clear();
 }
 
 TraceBrowser* TraceWidget::getTraceBrowser()

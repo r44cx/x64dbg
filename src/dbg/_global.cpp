@@ -216,18 +216,36 @@ bool DirExists(const char* dir)
 \param [in,out] szFileName Buffer of size MAX_PATH.
 \return true if it succeeds, false if it fails.
 */
-bool GetFileNameFromHandle(HANDLE hFile, char* szFileName)
+bool GetFileNameFromHandle(HANDLE hFile, char* szFileName, size_t nCount)
 {
     if(!hFile)
         return false;
     wchar_t wszFileName[MAX_PATH] = L"";
     if(!PathFromFileHandleW(hFile, wszFileName, _countof(wszFileName)))
         return false;
-    strncpy_s(szFileName, MAX_PATH, StringUtils::Utf16ToUtf8(wszFileName).c_str(), _TRUNCATE);
+
+    auto utf8 = StringUtils::Utf16ToUtf8(wszFileName);
+    if(utf8.rfind(R"(\Device\vmsmb\VSMB-)", 0) == 0)
+    {
+        // Hack for Windows Sandbox
+        auto windowsIdx = utf8.find(R"(\os\Windows\)");
+        if(windowsIdx != std::string::npos)
+        {
+            utf8 = R"(C:\)" + utf8.substr(windowsIdx + 4);
+        }
+    }
+
+    if(utf8.rfind(R"(\Device\)", 0) == 0)
+    {
+        // CreateFileW does not work on \Device\ paths directly, you need to prepend this
+        utf8.insert(0, R"(\\?\GLOBALROOT)");
+    }
+
+    strncpy_s(szFileName, nCount, utf8.c_str(), _TRUNCATE);
     return true;
 }
 
-bool GetFileNameFromProcessHandle(HANDLE hProcess, char* szFileName)
+bool GetFileNameFromProcessHandle(HANDLE hProcess, char* szFileName, size_t nCount)
 {
     wchar_t wszDosFileName[MAX_PATH] = L"";
     wchar_t wszFileName[MAX_PATH] = L"";
@@ -242,11 +260,11 @@ bool GetFileNameFromProcessHandle(HANDLE hProcess, char* szFileName)
     else
         result = !!GetModuleFileNameExW(hProcess, 0, wszFileName, _countof(wszFileName));
     if(result)
-        strncpy_s(szFileName, MAX_PATH, StringUtils::Utf16ToUtf8(wszFileName).c_str(), _TRUNCATE);
+        strncpy_s(szFileName, nCount, StringUtils::Utf16ToUtf8(wszFileName).c_str(), _TRUNCATE);
     return result;
 }
 
-bool GetFileNameFromModuleHandle(HANDLE hProcess, HMODULE hModule, char* szFileName)
+bool GetFileNameFromModuleHandle(HANDLE hProcess, HMODULE hModule, char* szFileName, size_t nCount)
 {
     wchar_t wszDosFileName[MAX_PATH] = L"";
     wchar_t wszFileName[MAX_PATH] = L"";
@@ -261,7 +279,7 @@ bool GetFileNameFromModuleHandle(HANDLE hProcess, HMODULE hModule, char* szFileN
     else
         result = !!GetModuleFileNameExW(hProcess, hModule, wszFileName, _countof(wszFileName));
     if(result)
-        strncpy_s(szFileName, MAX_PATH, StringUtils::Utf16ToUtf8(wszFileName).c_str(), _TRUNCATE);
+        strncpy_s(szFileName, nCount, StringUtils::Utf16ToUtf8(wszFileName).c_str(), _TRUNCATE);
     return result;
 }
 

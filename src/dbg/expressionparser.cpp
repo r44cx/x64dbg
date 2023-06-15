@@ -797,7 +797,21 @@ bool ExpressionParser::signedOperation(Token::Type type, const EvalValue & op1, 
 
 bool ExpressionParser::Calculate(duint & value, bool signedcalc, bool allowassign, bool silent, bool baseonly, int* value_size, bool* isvar, bool* hexonly) const
 {
-    value = 0;
+    EvalValue evalue(0);
+    if(!Calculate(evalue, signedcalc, allowassign, silent, baseonly, value_size, isvar, hexonly))
+        return false;
+
+    if(evalue.isString)
+    {
+        if(!silent)
+            dprintf(QT_TRANSLATE_NOOP("DBG", "Expression evaluated to a string: \"%s\"\n"), StringUtils::Escape(evalue.data).c_str());
+        return false;
+    }
+    return evalue.DoEvaluate(value, silent, baseonly, value_size, isvar, hexonly);
+}
+
+bool ExpressionParser::Calculate(EvalValue & value, bool signedcalc, bool allowassign, bool silent, bool baseonly, int* value_size, bool* isvar, bool* hexonly) const
+{
     if(!mPrefixTokens.size() || !mIsValidExpression)
         return false;
     std::vector<EvalValue> stack;
@@ -901,8 +915,9 @@ bool ExpressionParser::Calculate(duint & value, bool signedcalc, bool allowassig
                 return false;
             std::vector<ExpressionValue> argv;
             argv.resize(argTypes.size());
-            for(auto i = 0; i < argTypes.size(); i++)
+            for(size_t i = 0; i < argTypes.size(); i++)
             {
+                const auto & argType = argTypes[argTypes.size() - i - 1];
                 auto & top = stack[stack.size() - i - 1];
                 ExpressionValue arg;
                 if(top.isString)
@@ -921,7 +936,7 @@ bool ExpressionParser::Calculate(duint & value, bool signedcalc, bool allowassig
                     arg = { ValueTypeNumber, result };
                 }
 
-                if(arg.type != argTypes[i] && argTypes[i] != ValueTypeAny)
+                if(arg.type != argType && argType != ValueTypeAny)
                 {
                     if(!silent)
                     {
@@ -936,10 +951,36 @@ bool ExpressionParser::Calculate(duint & value, bool signedcalc, bool allowassig
                             }
                             return GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "invalid"));
                         };
-                        dprintf(QT_TRANSLATE_NOOP("DBG", "Expression function %s argument %d type mismatch (expected %s, got %s)!\n"),
-                                name.c_str(),
+                        String argValueStr;
+                        if(arg.type == ValueTypeNumber)
+                        {
+                            argValueStr = StringUtils::sprintf("0x%p", arg.number);
+                        }
+                        else if(arg.type == ValueTypeString)
+                        {
+                            argValueStr = "\"" + StringUtils::Escape(arg.string.ptr) + "\"";
+                        }
+                        else
+                        {
+                            argValueStr = "???";
+                        }
+                        String signature = name;
+                        signature += "(";
+                        for(size_t j = 0; j < argTypes.size(); j++)
+                        {
+                            if(j > 0)
+                            {
+                                signature += ", ";
+                            }
+                            signature += typeName(argTypes[j]);
+                        }
+                        signature += ")";
+                        dprintf(QT_TRANSLATE_NOOP("DBG", "Expression function %s argument %d/%d (%s) type mismatch (expected %s, got %s)!\n"),
+                                signature.c_str(),
                                 argTypes.size() - i,
-                                typeName(argTypes[i]).c_str(),
+                                argTypes.size(),
+                                argValueStr.c_str(),
+                                typeName(argType).c_str(),
                                 typeName(arg.type).c_str()
                                );
                     }
@@ -974,12 +1015,6 @@ bool ExpressionParser::Calculate(duint & value, bool signedcalc, bool allowassig
     }
     if(stack.size() != 1) //there should only be one value left on the stack
         return false;
-    auto top = stack.back();
-    if(top.isString)
-    {
-        if(!silent)
-            dprintf(QT_TRANSLATE_NOOP("DBG", "Expression evaluated to a string: \"%s\"\n"), StringUtils::Escape(top.data).c_str());
-        return false;
-    }
-    return top.DoEvaluate(value, silent, baseonly, value_size, isvar, hexonly);
+    value = stack.back();
+    return true;
 }

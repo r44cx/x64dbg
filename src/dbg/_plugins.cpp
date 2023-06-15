@@ -41,6 +41,11 @@ PLUG_IMPEXP void _plugin_logprintf(const char* format, ...)
     va_end(args);
 }
 
+PLUG_IMPEXP void _plugin_lograw_html(const char* text)
+{
+    dprint_untranslated_html(text);
+}
+
 PLUG_IMPEXP void _plugin_logputs(const char* text)
 {
     dputs_untranslated(text);
@@ -53,7 +58,7 @@ PLUG_IMPEXP void _plugin_logprint(const char* text)
 
 PLUG_IMPEXP void _plugin_debugpause()
 {
-    DebugUpdateGuiSetStateAsync(GetContextDataEx(hActiveThread, UE_CIP), true);
+    DebugUpdateGuiSetStateAsync(GetContextDataEx(hActiveThread, UE_CIP), paused);
     lock(WAITID_RUN);
     dbgsetforeground();
     dbgsetskipexceptions(false);

@@ -292,7 +292,7 @@ static void AddDBFileTypeIcon(TCHAR* sz32Path, TCHAR* sz64Path)
     return;
 }
 
-static TCHAR szModulePath[MAX_PATH] = TEXT("");
+static TCHAR szApplicationDir[MAX_PATH] = TEXT("");
 static TCHAR szCurrentDir[MAX_PATH] = TEXT("");
 static TCHAR sz32Path[MAX_PATH] = TEXT("");
 static TCHAR sz32Dir[MAX_PATH] = TEXT("");
@@ -306,7 +306,7 @@ static void restartInstall()
     osvi.dwOSVersionInfoSize = sizeof(osvi);
     GetVersionEx(&osvi);
     auto operation = osvi.dwMajorVersion >= 6 ? TEXT("runas") : TEXT("open");
-    ShellExecute(nullptr, operation, szModulePath, TEXT("::install"), szCurrentDir, SW_SHOWNORMAL);
+    ShellExecute(nullptr, operation, szApplicationDir, TEXT("::install"), szCurrentDir, SW_SHOWNORMAL);
 }
 
 static BOOL CALLBACK DlgLauncher(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -429,14 +429,14 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     CoInitialize(nullptr);
 
     //Get INI file path
-    if(!GetModuleFileName(nullptr, szModulePath, MAX_PATH))
+    if(!GetModuleFileName(nullptr, szApplicationDir, MAX_PATH))
     {
         MessageBox(nullptr, LoadResString(IDS_ERRORGETTINGMODULEPATH), LoadResString(IDS_ERROR), MB_ICONERROR | MB_SYSTEMMODAL);
         return 0;
     }
     TCHAR szIniPath[MAX_PATH] = TEXT("");
-    _tcscpy_s(szIniPath, szModulePath);
-    _tcscpy_s(szCurrentDir, szModulePath);
+    _tcscpy_s(szIniPath, szApplicationDir);
+    _tcscpy_s(szCurrentDir, szApplicationDir);
     auto len = int(_tcslen(szCurrentDir));
     while(szCurrentDir[len] != TEXT('\\') && len)
         len--;
@@ -453,29 +453,50 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     //Load settings
     auto bDoneSomething = false;
-    if(!GetPrivateProfileString(TEXT("Launcher"), TEXT("x32dbg"), TEXT(""), sz32Path, MAX_PATH, szIniPath))
+    TCHAR szTempPath[MAX_PATH] = TEXT("");
+    if(!GetPrivateProfileString(TEXT("Launcher"), TEXT("x32dbg"), TEXT(""), szTempPath, MAX_PATH, szIniPath))
     {
         _tcscpy_s(sz32Path, szCurrentDir);
         PathAppend(sz32Path, TEXT("x32\\x32dbg.exe"));
         if(FileExists(sz32Path))
         {
-            WritePrivateProfileString(TEXT("Launcher"), TEXT("x32dbg"), sz32Path, szIniPath);
+            WritePrivateProfileString(TEXT("Launcher"), TEXT("x32dbg"), TEXT("x32\\x32dbg.exe"), szIniPath);
             bDoneSomething = true;
         }
+    }
+    else
+    {
+        if(PathIsRelative(szTempPath))
+        {
+            _tcscpy_s(sz32Path, szCurrentDir);
+            PathAppend(sz32Path, szTempPath);
+        }
+        else
+            _tcscpy_s(sz32Path, szTempPath);
     }
 
     _tcscpy_s(sz32Dir, sz32Path);
     PathRemoveFileSpec(sz32Dir);
 
-    if(!GetPrivateProfileString(TEXT("Launcher"), TEXT("x64dbg"), TEXT(""), sz64Path, MAX_PATH, szIniPath))
+    if(!GetPrivateProfileString(TEXT("Launcher"), TEXT("x64dbg"), TEXT(""), szTempPath, MAX_PATH, szIniPath))
     {
         _tcscpy_s(sz64Path, szCurrentDir);
         PathAppend(sz64Path, TEXT("x64\\x64dbg.exe"));
         if(FileExists(sz64Path))
         {
-            WritePrivateProfileString(TEXT("Launcher"), TEXT("x64dbg"), sz64Path, szIniPath);
+            WritePrivateProfileString(TEXT("Launcher"), TEXT("x64dbg"), TEXT("x64\\x64dbg.exe"), szIniPath);
             bDoneSomething = true;
         }
+    }
+    else
+    {
+        if(PathIsRelative(szTempPath))
+        {
+            _tcscpy_s(sz64Path, szCurrentDir);
+            PathAppend(sz64Path, szTempPath);
+        }
+        else
+            _tcscpy_s(sz64Path, szTempPath);
     }
 
     _tcscpy_s(sz64Dir, sz64Path);
@@ -535,12 +556,12 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     if(argc <= 1) //no arguments -> launcher dialog
     {
-        if(!FileExists(sz32Path) && BrowseFileOpen(nullptr, TEXT("x32dbg.exe\0x32dbg.exe\0\0"), nullptr, sz32Path, MAX_PATH, szCurrentDir))
+        if(!FileExists(sz32Path) && BrowseFileOpen(nullptr, TEXT("x32dbg.exe\0x32dbg.exe\0*.exe\0*.exe\0\0"), nullptr, sz32Path, MAX_PATH, szCurrentDir))
         {
             WritePrivateProfileString(TEXT("Launcher"), TEXT("x32dbg"), sz32Path, szIniPath);
             bDoneSomething = true;
         }
-        if(isWoW64() && !FileExists(sz64Path) && BrowseFileOpen(nullptr, TEXT("x64dbg.exe\0x64dbg.exe\0\0"), nullptr, sz64Path, MAX_PATH, szCurrentDir))
+        if(isWoW64() && !FileExists(sz64Path) && BrowseFileOpen(nullptr, TEXT("x64dbg.exe\0x64dbg.exe\0*.exe\0*.exe\0\0"), nullptr, sz64Path, MAX_PATH, szCurrentDir))
         {
             WritePrivateProfileString(TEXT("Launcher"), TEXT("x64dbg"), sz64Path, szIniPath);
             bDoneSomething = true;
@@ -549,12 +570,12 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     }
     else if(argc == 2 && !wcscmp(argv[1], L"::install")) //set configuration
     {
-        if(!FileExists(sz32Path) && BrowseFileOpen(nullptr, TEXT("x32dbg.exe\0x32dbg.exe\0\0"), nullptr, sz32Path, MAX_PATH, szCurrentDir))
+        if(!FileExists(sz32Path) && BrowseFileOpen(nullptr, TEXT("x32dbg.exe\0x32dbg.exe\0*.exe\0*.exe\0\0"), nullptr, sz32Path, MAX_PATH, szCurrentDir))
         {
             WritePrivateProfileString(TEXT("Launcher"), TEXT("x32dbg"), sz32Path, szIniPath);
             bDoneSomething = true;
         }
-        if(isWoW64() && !FileExists(sz64Path) && BrowseFileOpen(nullptr, TEXT("x64dbg.exe\0x64dbg.exe\0\0"), nullptr, sz64Path, MAX_PATH, szCurrentDir))
+        if(isWoW64() && !FileExists(sz64Path) && BrowseFileOpen(nullptr, TEXT("x64dbg.exe\0x64dbg.exe\0*.exe\0*.exe\0\0"), nullptr, sz64Path, MAX_PATH, szCurrentDir))
         {
             WritePrivateProfileString(TEXT("Launcher"), TEXT("x64dbg"), sz64Path, szIniPath);
             bDoneSomething = true;
@@ -564,9 +585,9 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         if(MessageBox(nullptr, LoadResString(IDS_ASKSHELLEXT), LoadResString(IDS_QUESTION), MB_YESNO | MB_ICONQUESTION) == IDYES)
         {
             TCHAR szLauncherCommand[MAX_PATH] = TEXT("");
-            _stprintf_s(szLauncherCommand, _countof(szLauncherCommand), TEXT("\"%s\" \"%%1\""), szModulePath);
+            _stprintf_s(szLauncherCommand, _countof(szLauncherCommand), TEXT("\"%s\" \"%%1\""), szApplicationDir);
             TCHAR szIconCommand[MAX_PATH] = TEXT("");
-            _stprintf_s(szIconCommand, _countof(szIconCommand), TEXT("\"%s\",0"), szModulePath);
+            _stprintf_s(szIconCommand, _countof(szIconCommand), TEXT("\"%s\",0"), szApplicationDir);
             if(RegisterShellExtension(SHELLEXT_EXE_KEY, szLauncherCommand))
                 AddShellIcon(SHELLEXT_ICON_EXE_KEY, szIconCommand, LoadResString(IDS_SHELLEXTDBG));
             if(RegisterShellExtension(SHELLEXT_DLL_KEY, szLauncherCommand))

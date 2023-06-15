@@ -1,5 +1,4 @@
-#ifndef COMMONACTIONS_H
-#define COMMONACTIONS_H
+#pragma once
 
 #include <QAction>
 #include <functional>
@@ -39,7 +38,7 @@ public:
         ActionFindrefMore = 1 << 22, // Find references (submenu)
         ActionXref = 1 << 23, // Xref
         ActionXrefMore = 1 << 24, // Xref (submenu)
-        ActionNewOrigin = 1 << 25, // Set New Origin Here
+        ActionNewOrigin = 1 << 25, // Set EIP/RIP Here
         ActionNewThread = 1 << 26, // Create New Thread Here
         ActionWatch = 1 << 27 // Watch DWORD
     } CommonActionsList;
@@ -76,6 +75,3 @@ private:
     bool WarningBoxNotExecutable(const QString & text, duint wVA);
     QWidget* widgetparent();
 };
-
-
-#endif //COMMONACTIONS_H

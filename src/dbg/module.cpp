@@ -11,8 +11,9 @@
 #include <shlwapi.h>
 #include "console.h"
 #include "debugger.h"
+#include "value.h"
 #include <memory>
-#include "symbolundecorator.h"
+#include "LLVMDemangle/LLVMDemangle.h"
 
 std::map<Range, std::unique_ptr<MODINFO>, RangeCompare> modinfo;
 std::unordered_map<duint, std::string> hashNameMap;
@@ -212,7 +213,12 @@ static void ReadExportDirectory(MODINFO & Info, ULONG_PTR FileMapVA)
     for(auto & x : Info.exports)
     {
         if(!x.name.empty())
-            undecorateName(x.name, x.undecoratedName);
+        {
+            auto demangled = LLVMDemangle(x.name.c_str());
+            if(demangled && x.name.compare(demangled) != 0)
+                x.undecoratedName = demangled;
+            LLVMDemangleFree(demangled);
+        }
     }
 }
 
@@ -300,7 +306,15 @@ static void ReadImportDirectory(MODINFO & Info, ULONG_PTR FileMapVA)
 
     // undecorate names
     for(auto & i : Info.imports)
-        undecorateName(i.name, i.undecoratedName);
+    {
+        if(!i.name.empty())
+        {
+            auto demangled = LLVMDemangle(i.name.c_str());
+            if(demangled && i.name.compare(demangled) != 0)
+                i.undecoratedName = demangled;
+            LLVMDemangleFree(demangled);
+        }
+    }
 }
 
 static void ReadTlsCallbacks(MODINFO & Info, ULONG_PTR FileMapVA)
@@ -730,6 +744,8 @@ void GetModuleInfo(MODINFO & Info, ULONG_PTR FileMapVA)
 
         curSection.addr = ntSection->VirtualAddress + Info.base;
         curSection.size = ntSection->Misc.VirtualSize;
+        if(!curSection.size)
+            curSection.size = ntSection->SizeOfRawData;
 
         // Null-terminate section name
         char sectionName[IMAGE_SIZEOF_SHORT_NAME + 1];
@@ -793,11 +809,11 @@ bool ModLoad(duint Base, duint Size, const char* FullPath, bool loadSymbols)
 
         if(fileStart)
         {
-            strcpy_s(file, fileStart + 1);
+            strncpy_s(file, fileStart + 1, _TRUNCATE);
             fileStart[0] = '\0';
         }
         else
-            strcpy_s(file, FullPath);
+            strncpy_s(file, FullPath, _TRUNCATE);
     }
 
     // Calculate module hash from full file name
@@ -824,9 +840,9 @@ bool ModLoad(duint Base, duint Size, const char* FullPath, bool loadSymbols)
     info.fileMapVA = 0;
 
     // Determine whether the module is located in system
-    wchar_t sysdir[MAX_PATH];
-    GetEnvironmentVariableW(L"windir", sysdir, _countof(sysdir));
-    String Utf8Sysdir = StringUtils::Utf16ToUtf8(sysdir);
+    wchar_t szWindowsDir[MAX_PATH];
+    GetWindowsDirectoryW(szWindowsDir, _countof(szWindowsDir));
+    String Utf8Sysdir = StringUtils::Utf16ToUtf8(szWindowsDir);
     Utf8Sysdir.append("\\");
     if(_memicmp(Utf8Sysdir.c_str(), FullPath, Utf8Sysdir.size()) == 0)
     {
@@ -891,11 +907,11 @@ bool ModLoad(duint Base, duint Size, const char* FullPath, bool loadSymbols)
     if(virtualModule)
     {
         if(info.entry >= Base && info.entry < Base + Size)
-            LabelSet(info.entry, "EntryPoint", false);
+            LabelSet(info.entry, "EntryPoint", false, true);
 
         apienumexports(Base, [](duint base, const char* mod, const char* name, duint addr)
         {
-            LabelSet(addr, name, false);
+            LabelSet(addr, name, false, true);
         });
     }
 
@@ -1339,6 +1355,112 @@ const MODEXPORT* MODINFO::findExport(duint rva) const
             return &exports[*found];
     }
     return nullptr;
+}
+
+const MODIMPORT* MODINFO::findImport(duint rva) const
+{
+    if(imports.size())
+    {
+        auto found = std::lower_bound(importsByRva.begin(), importsByRva.end(), rva, [this](size_t index, duint rva)
+        {
+            return imports.at(index).iatRva < rva;
+        });
+        found = found != importsByRva.end() && rva >= imports.at(*found).iatRva ? found : importsByRva.end();
+        if(found != importsByRva.end())
+            return &imports[*found];
+    }
+    return nullptr;
+}
+
+static bool resolveApiSetForward(const String & originatingDll, String & forwardDll, String & forwardExport)
+{
+    wchar_t szApiSetDllPath[MAX_PATH] = L"";
+    if(!GetSystemDirectoryW(szApiSetDllPath, _countof(szApiSetDllPath)))
+        return {};
+    wcsncat_s(szApiSetDllPath, L"\\downlevel\\", _TRUNCATE);
+    wcsncat_s(szApiSetDllPath, StringUtils::Utf8ToUtf16(forwardDll).c_str(), _TRUNCATE);
+    wcsncat_s(szApiSetDllPath, L".dll", _TRUNCATE);
+
+    auto ticks = GetTickCount();
+    // Load the physical module from disk
+    MODINFO info = {};
+    if(!StaticFileLoadW(szApiSetDllPath, UE_ACCESS_READ, false, &info.fileHandle, &info.loadedSize, &info.fileMap, &info.fileMapVA))
+        return false;
+
+    GetModuleInfo(info, info.fileMapVA);
+
+    NameIndex found;
+    if(!NameIndex::findByName(info.exportsByName, forwardExport, found, true))
+        return false;
+
+    const auto & foundExport = info.exports[found.index];
+    if(!foundExport.forwarded)
+    {
+        dputs("assertion failure, api set not forwarded");
+        return false;
+    }
+
+    const auto & forwardName = foundExport.forwardName;
+    auto dotIdx = forwardName.find('.');
+    if(dotIdx == String::npos)
+        return false;
+
+    forwardDll = forwardName.substr(0, dotIdx);
+    forwardExport = forwardName.substr(dotIdx + 1);
+
+    // Some DLLs have extra mappings: https://www.geoffchappell.com/studies/windows/win32/apisetschema/history/sets61.htm
+    // This is a heuristic to resolve correctly without having to implement proper APISetMap support
+    if(forwardDll == originatingDll)
+    {
+        // The only supported exceptional mapping is kernel32 -> kernelbase
+        if(_stricmp(forwardDll.c_str(), "kernel32") != 0)
+            return false;
+
+        forwardDll = "kernelbase";
+    }
+
+    return !forwardExport.empty();
+}
+
+duint MODINFO::getProcAddress(const String & exportName, int maxForwardDepth) const
+{
+    NameIndex found;
+    if(!NameIndex::findByName(exportsByName, exportName, found, false))
+        return 0;
+    const auto exportInfo = &exports[found.index];
+    if(maxForwardDepth > 0 && exportInfo->forwarded)
+    {
+        const auto & forwardName = exportInfo->forwardName;
+        auto dotIdx = forwardName.find('.');
+        if(dotIdx == String::npos)
+            return 0;
+        auto forwardExport = forwardName.substr(dotIdx + 1);
+        if(forwardExport.empty())
+            return 0;
+        auto forwardDll = forwardName.substr(0, dotIdx);
+        auto forwardBase = ModBaseFromName(forwardDll.c_str());
+        if(forwardBase == 0 && _strnicmp(forwardDll.c_str(), "api-", 4) == 0 || _strnicmp(forwardDll.c_str(), "ext-", 4) == 0)
+        {
+            if(!resolveApiSetForward(name, forwardDll, forwardExport))
+                return 0;
+            forwardBase = ModBaseFromName(forwardDll.c_str());
+        }
+        auto forwardModule = ModInfoFromAddr(forwardBase);
+        if(forwardModule == nullptr)
+            return 0;
+        if(forwardExport[0] == '#')
+        {
+            duint ordinal = 0;
+            if(!convertNumber(forwardExport.c_str() + 1, ordinal, 0) || ordinal > 0xFFFF)
+                return 0;
+            auto exportIndex = ordinal - forwardModule->exportOrdinalBase;
+            if(exportIndex >= forwardModule->exports.size())
+                return 0;
+            return forwardModule->base + forwardModule->exports[exportIndex].rva;
+        }
+        return forwardModule->getProcAddress(forwardExport, maxForwardDepth - 1);
+    }
+    return base + exportInfo->rva;
 }
 
 void MODIMPORT::convertToGuiSymbol(duint base, SYMBOLINFO* info) const

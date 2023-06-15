@@ -1,5 +1,4 @@
-#ifndef SIMPLETRACEDIALOG_H
-#define SIMPLETRACEDIALOG_H
+#pragma once
 
 #include <QDialog>
 
@@ -21,10 +20,11 @@ private slots:
     void on_btnOk_clicked();
     void on_btnLogFile_clicked();
 
+public slots:
+    int exec() override;
+
 private:
     Ui::SimpleTraceDialog* ui;
     QString mTraceCommand;
     QString mLogFile;
 };
-
-#endif // SIMPLETRACEDIALOG_H

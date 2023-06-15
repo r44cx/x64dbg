@@ -14,8 +14,8 @@
    <string>HexEdit</string>
   </property>
   <property name="windowIcon">
-   <iconset resource="../../resource.qrc">
-    <normaloff>:/icons/images/document-binary.png</normaloff>:/icons/images/document-binary.png</iconset>
+   <iconset theme="document-binary" resource="../../resource.qrc">
+    <normaloff>:/Default/icons/document-binary.png</normaloff>:/Default/icons/document-binary.png</iconset>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_4">
    <item>
@@ -53,7 +53,7 @@
               <string/>
              </property>
              <property name="pixmap">
-              <pixmap resource="../../resource.qrc">:/icons/images/fatal-error.png</pixmap>
+              <pixmap resource="../../resource.qrc">:/Default/icons/fatal-error.png</pixmap>
              </property>
             </widget>
            </item>
@@ -109,7 +109,7 @@
               <string/>
              </property>
              <property name="pixmap">
-              <pixmap resource="../../resource.qrc">:/icons/images/fatal-error.png</pixmap>
+              <pixmap resource="../../resource.qrc">:/Default/icons/fatal-error.png</pixmap>
              </property>
             </widget>
            </item>
@@ -165,7 +165,7 @@
               <string/>
              </property>
              <property name="pixmap">
-              <pixmap resource="../../resource.qrc">:/icons/images/fatal-error.png</pixmap>
+              <pixmap resource="../../resource.qrc">:/Default/icons/fatal-error.png</pixmap>
              </property>
             </widget>
            </item>
@@ -281,7 +281,7 @@
               <string/>
              </property>
              <property name="pixmap">
-              <pixmap resource="../../resource.qrc">:/icons/images/fatal-error.png</pixmap>
+              <pixmap resource="../../resource.qrc">:/Default/icons/fatal-error.png</pixmap>
              </property>
             </widget>
            </item>
@@ -345,28 +345,39 @@
        <item>
         <layout class="QVBoxLayout" name="verticalLayout_2">
          <item>
-          <layout class="QHBoxLayout" name="horizontalLayout_4">
-           <item>
-            <widget class="QListWidget" name="listType">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-               <horstretch>20</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPlainTextEdit" name="editCode">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-               <horstretch>80</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-            </widget>
-           </item>
-          </layout>
+          <widget class="QSplitter" name="splitter">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="handleWidth">
+            <number>1</number>
+           </property>
+           <property name="childrenCollapsible">
+            <bool>false</bool>
+           </property>
+           <widget class="QListWidget" name="listType">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+              <horstretch>20</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+           </widget>
+           <widget class="QPlainTextEdit" name="editCode">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+              <horstretch>80</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+           </widget>
+          </widget>
          </item>
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout_5">

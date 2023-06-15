@@ -79,6 +79,7 @@ CPUWidget::CPUWidget(QWidget* parent) : QWidget(parent), ui(new Ui::CPUWidget)
 
     ui->mTopRightUpperFrameLayout->addWidget(button_changeview);
     ui->mTopRightUpperFrameLayout->addWidget(upperScrollArea);
+    ui->mTopHSplitter->setCollapsible(1, true); // allow collapsing of the RegisterView
 
     ui->mTopRightLowerFrameLayout->addWidget(mArgumentWidget);
 
@@ -117,6 +118,7 @@ void CPUWidget::saveWindowSettings()
     saveSplitter(ui->mTopLeftUpperHSplitter, "mTopLeftUpperHSplitter");
     saveSplitter(ui->mTopRightVSplitter, "mTopRightVSplitter");
     saveSplitter(ui->mBotHSplitter, "mBotHSplitter");
+    mDump->saveWindowSettings();
 }
 
 void CPUWidget::loadWindowSettings()
@@ -127,6 +129,7 @@ void CPUWidget::loadWindowSettings()
     loadSplitter(ui->mTopLeftUpperHSplitter, "mTopLeftUpperHSplitter");
     loadSplitter(ui->mTopRightVSplitter, "mTopRightVSplitter");
     loadSplitter(ui->mBotHSplitter, "mBotHSplitter");
+    mDump->loadWindowSettings();
 }
 
 CPUWidget::~CPUWidget()
@@ -250,6 +253,7 @@ void CPUWidget::detachGraph()
 
 void CPUWidget::attachGraph(QWidget* widget)
 {
+    Q_UNUSED(widget);
     mGraph->setParent(this);
     ui->mTopLeftUpperRightFrameLayout->addWidget(mGraph);
     mGraph->hide();

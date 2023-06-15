@@ -21,6 +21,16 @@ bool IsVistaOrLater()
     return vistaOrLater;
 }
 
+bool Is19042OrLater()
+{
+    static bool is19042OrLater = []()
+    {
+        auto userSharedData = SharedUserData;
+        return userSharedData->NtBuildNumber >= 19042;
+    }();
+    return is19042OrLater;
+}
+
 bool ExHandlerGetInfo(EX_HANDLER_TYPE Type, std::vector<duint> & Entries)
 {
     Entries.clear();
@@ -138,8 +148,9 @@ struct VEH_ENTRY_VISTA
 {
     duint Flink;
     duint Blink;
-    DWORD Count;
-    duint VectoredHandler;
+    duint PtrRefCount;
+    duint VectoredHandler; // unclear when this changed
+    duint VectoredHandler2;
 };
 
 bool ExHandlerGetVCH(std::vector<duint> & Entries, bool GetVEH)
@@ -174,6 +185,9 @@ bool ExHandlerGetVCH(std::vector<duint> & Entries, bool GetVEH)
         if(!MemRead(cur_entry, &entry, sizeof(entry)))
             return false;
         auto handler = entry.VectoredHandler;
+        // At some point Windows updated the structure
+        if(Is19042OrLater())
+            handler = entry.VectoredHandler2;
         if(!MemDecodePointer(&handler, true))
             return false;
         Entries.push_back(handler);

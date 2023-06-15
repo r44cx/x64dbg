@@ -14,50 +14,45 @@
 CPURegistersView::CPURegistersView(CPUWidget* parent) : RegistersView(parent), mParent(parent)
 {
     // precreate ContextMenu Actions
-    wCM_Increment = setupAction(DIcon("register_inc.png"), tr("Increment"));
-    wCM_Decrement = setupAction(DIcon("register_dec.png"), tr("Decrement"));
-    wCM_Zero = setupAction(DIcon("register_zero.png"), tr("Zero"));
-    wCM_SetToOne = setupAction(DIcon("register_one.png"), tr("Set to 1"));
-    wCM_Modify = new QAction(DIcon("register_edit.png"), tr("Modify value"), this);
+    wCM_Modify = new QAction(DIcon("register_edit"), tr("Modify value"), this);
     wCM_Modify->setShortcut(QKeySequence(Qt::Key_Enter));
-    wCM_ToggleValue = setupAction(DIcon("register_toggle.png"), tr("Toggle"));
-    wCM_Undo = setupAction(DIcon("undo.png"), tr("Undo"));
-    wCM_FollowInDisassembly = new QAction(DIcon(QString("processor%1.png").arg(ArchValue("32", "64"))), tr("Follow in Disassembler"), this);
-    wCM_FollowInDump = new QAction(DIcon("dump.png"), tr("Follow in Dump"), this);
-    wCM_FollowInStack = new QAction(DIcon("stack.png"), tr("Follow in Stack"), this);
+    wCM_Increment = new QAction(DIcon("register_inc"), tr("Increment value"), this);
+    wCM_Increment->setShortcut(QKeySequence(Qt::Key_Plus));
+    wCM_Decrement = new QAction(DIcon("register_dec"), tr("Decrement value"), this);
+    wCM_Decrement->setShortcut(QKeySequence(Qt::Key_Minus));
+    wCM_Zero = new QAction(DIcon("register_zero"), tr("Zero value"), this);
+    wCM_Zero->setShortcut(QKeySequence(Qt::Key_0));
+    wCM_ToggleValue = setupAction(DIcon("register_toggle"), tr("Toggle"));
+    wCM_Undo = setupAction(DIcon("undo"), tr("Undo"));
+    wCM_CopyPrevious = setupAction(DIcon("undo"), "");
+    wCM_FollowInDisassembly = new QAction(DIcon(QString("processor%1").arg(ArchValue("32", "64"))), tr("Follow in Disassembler"), this);
+    wCM_FollowInDump = new QAction(DIcon("dump"), tr("Follow in Dump"), this);
+    wCM_FollowInStack = new QAction(DIcon("stack"), tr("Follow in Stack"), this);
     wCM_FollowInMemoryMap = new QAction(DIcon("memmap_find_address_page"), tr("Follow in Memory Map"), this);
-    wCM_RemoveHardware = new QAction(DIcon("breakpoint_remove.png"), tr("&Remove hardware breakpoint"), this);
-    wCM_Incrementx87Stack = setupAction(DIcon("arrow-small-down.png"), tr("Increment x87 Stack"));
-    wCM_Decrementx87Stack = setupAction(DIcon("arrow-small-up.png"), tr("Decrement x87 Stack"));
-    wCM_IncrementPtrSize = setupAction(DIcon("register_inc.png"), ArchValue(tr("Increase 4"), tr("Increase 8")));
-    wCM_DecrementPtrSize = setupAction(DIcon("register_dec.png"), ArchValue(tr("Decrease 4"), tr("Decrease 8")));
-    wCM_Push = setupAction(DIcon("arrow-small-down.png"), tr("Push"));
-    wCM_Pop = setupAction(DIcon("arrow-small-up.png"), tr("Pop"));
-    wCM_Highlight = setupAction(DIcon("highlight.png"), tr("Highlight"));
+    wCM_RemoveHardware = new QAction(DIcon("breakpoint_remove"), tr("&Remove hardware breakpoint"), this);
+    wCM_Incrementx87Stack = setupAction(DIcon("arrow-small-down"), tr("Increment x87 Stack"));
+    wCM_Decrementx87Stack = setupAction(DIcon("arrow-small-up"), tr("Decrement x87 Stack"));
+    wCM_Highlight = setupAction(DIcon("highlight"), tr("Highlight"));
     // foreign messages
     connect(Bridge::getBridge(), SIGNAL(updateRegisters()), this, SLOT(updateRegistersSlot()));
     connect(this, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(displayCustomContextMenuSlot(QPoint)));
     connect(Bridge::getBridge(), SIGNAL(dbgStateChanged(DBGSTATE)), this, SLOT(debugStateChangedSlot(DBGSTATE)));
     connect(parent->getDisasmWidget(), SIGNAL(selectionChanged(dsint)), this, SLOT(disasmSelectionChangedSlot(dsint)));
     // context menu actions
-    connect(wCM_Increment, SIGNAL(triggered()), this, SLOT(onIncrementAction()));
-    connect(wCM_Decrement, SIGNAL(triggered()), this, SLOT(onDecrementAction()));
     connect(wCM_Incrementx87Stack, SIGNAL(triggered()), this, SLOT(onIncrementx87StackAction()));
     connect(wCM_Decrementx87Stack, SIGNAL(triggered()), this, SLOT(onDecrementx87StackAction()));
-    connect(wCM_Zero, SIGNAL(triggered()), this, SLOT(onZeroAction()));
-    connect(wCM_SetToOne, SIGNAL(triggered()), this, SLOT(onSetToOneAction()));
     connect(wCM_Modify, SIGNAL(triggered()), this, SLOT(onModifyAction()));
+    connect(wCM_Increment, SIGNAL(triggered()), this, SLOT(onIncrementAction()));
+    connect(wCM_Decrement, SIGNAL(triggered()), this, SLOT(onDecrementAction()));
+    connect(wCM_Zero, SIGNAL(triggered()), this, SLOT(onZeroAction()));
     connect(wCM_ToggleValue, SIGNAL(triggered()), this, SLOT(onToggleValueAction()));
     connect(wCM_Undo, SIGNAL(triggered()), this, SLOT(onUndoAction()));
+    connect(wCM_CopyPrevious, SIGNAL(triggered()), this, SLOT(onCopyPreviousAction()));
     connect(wCM_FollowInDisassembly, SIGNAL(triggered()), this, SLOT(onFollowInDisassembly()));
     connect(wCM_FollowInDump, SIGNAL(triggered()), this, SLOT(onFollowInDump()));
     connect(wCM_FollowInStack, SIGNAL(triggered()), this, SLOT(onFollowInStack()));
     connect(wCM_FollowInMemoryMap, SIGNAL(triggered()), this, SLOT(onFollowInMemoryMap()));
     connect(wCM_RemoveHardware, SIGNAL(triggered()), this, SLOT(onRemoveHardware()));
-    connect(wCM_IncrementPtrSize, SIGNAL(triggered()), this, SLOT(onIncrementPtrSize()));
-    connect(wCM_DecrementPtrSize, SIGNAL(triggered()), this, SLOT(onDecrementPtrSize()));
-    connect(wCM_Push, SIGNAL(triggered()), this, SLOT(onPushAction()));
-    connect(wCM_Pop, SIGNAL(triggered()), this, SLOT(onPopAction()));
     connect(wCM_Highlight, SIGNAL(triggered()), this, SLOT(onHighlightSlot()));
 
     refreshShortcutsSlot();
@@ -66,18 +61,10 @@ CPURegistersView::CPURegistersView(CPUWidget* parent) : RegistersView(parent), m
 
 void CPURegistersView::refreshShortcutsSlot()
 {
-    wCM_Increment->setShortcut(ConfigShortcut("ActionIncreaseRegister"));
-    wCM_Decrement->setShortcut(ConfigShortcut("ActionDecreaseRegister"));
-    wCM_Zero->setShortcut(ConfigShortcut("ActionZeroRegister"));
-    wCM_SetToOne->setShortcut(ConfigShortcut("ActionSetOneRegister"));
     wCM_ToggleValue->setShortcut(ConfigShortcut("ActionToggleRegisterValue"));
     wCM_Highlight->setShortcut(ConfigShortcut("ActionHighlightingMode"));
-    wCM_IncrementPtrSize->setShortcut(ConfigShortcut("ActionIncreaseRegisterPtrSize"));
-    wCM_DecrementPtrSize->setShortcut(ConfigShortcut("ActionDecreaseRegisterPtrSize"));
     wCM_Incrementx87Stack->setShortcut(ConfigShortcut("ActionIncrementx87Stack"));
     wCM_Decrementx87Stack->setShortcut(ConfigShortcut("ActionDecrementx87Stack"));
-    wCM_Push->setShortcut(ConfigShortcut("ActionPush"));
-    wCM_Pop->setShortcut(ConfigShortcut("ActionPop"));
     RegistersView::refreshShortcutsSlot();
 }
 
@@ -136,21 +123,29 @@ void CPURegistersView::mouseDoubleClickEvent(QMouseEvent* event)
     // do we find a corresponding register?
     if(!identifyRegister(y, x, 0))
         return;
-    if(mSelected == CIP) //double clicked on CIP register
+    if(mSelected == CIP) //double clicked on CIP register, disasm CIP
         DbgCmdExec("disasm cip");
     // is current register general purposes register or FPU register?
     else if(mMODIFYDISPLAY.contains(mSelected))
         wCM_Modify->trigger();
     else if(mBOOLDISPLAY.contains(mSelected)) // is flag ?
-        wCM_ToggleValue->trigger();
+        wCM_ToggleValue->trigger(); //toggle flag value
     else if(mCANSTOREADDRESS.contains(mSelected))
-        wCM_FollowInDisassembly->trigger();
+        wCM_FollowInDisassembly->trigger(); //follow in disassembly
+    else if(mSelected == ArchValue(FS, GS)) // double click on FS or GS, follow TEB in dump
+        DbgCmdExec("dump teb()");
 }
 
 void CPURegistersView::keyPressEvent(QKeyEvent* event)
 {
     if(isActive && (event->key() == Qt::Key_Enter || event->key() == Qt::Key_Return))
         wCM_Modify->trigger();
+    else if(isActive && (event->key() == Qt::Key_Plus))
+        wCM_Increment->trigger();
+    else if(isActive && (event->key() == Qt::Key_Minus))
+        wCM_Decrement->trigger();
+    else if(isActive && (event->key() == Qt::Key_0))
+        wCM_Zero->trigger();
     else
         RegistersView::keyPressEvent(event);
 }
@@ -269,7 +264,7 @@ void CPURegistersView::displayEditDialog()
 
             mLineEdit.setText(GetRegStringValueFromValue(mSelected,  registerValue(&wRegDumpStruct, mSelected)));
             mLineEdit.setWindowTitle(tr("Edit FPU register"));
-            mLineEdit.setWindowIcon(DIcon("log.png"));
+            mLineEdit.setWindowIcon(DIcon("log"));
             mLineEdit.setCursorPosition(0);
             auto sizeRegister = int(GetSizeRegister(mSelected));
             if(sizeRegister == 10)
@@ -413,7 +408,7 @@ void CPURegistersView::CreateDumpNMenu(QMenu* dumpMenu)
 {
     QList<QString> names;
     CPUMultiDump* multiDump = mParent->getDumpWidget();
-    dumpMenu->setIcon(DIcon("dump.png"));
+    dumpMenu->setIcon(DIcon("dump"));
     int maxDumps = multiDump->getMaxCPUTabs();
     multiDump->getTabNames(names);
     for(int i = 0; i < maxDumps; i++)
@@ -437,74 +432,34 @@ void CPURegistersView::onDecrementx87StackAction()
         setRegister(x87SW_TOP, ((* ((duint*) registerValue(&wRegDumpStruct, x87SW_TOP))) - 1) % 8);
 }
 
+void CPURegistersView::onModifyAction()
+{
+    if(mMODIFYDISPLAY.contains(mSelected))
+        displayEditDialog();
+}
+
 void CPURegistersView::onIncrementAction()
 {
     if(mINCREMENTDECREMET.contains(mSelected))
-        setRegister(mSelected, (* ((duint*) registerValue(&wRegDumpStruct, mSelected))) + 1);
+    {
+        duint value = *((duint*) registerValue(&wRegDumpStruct, mSelected));
+        setRegister(mSelected, value + 1);
+    }
 }
 
 void CPURegistersView::onDecrementAction()
 {
     if(mINCREMENTDECREMET.contains(mSelected))
-        setRegister(mSelected, (* ((duint*) registerValue(&wRegDumpStruct, mSelected))) - 1);
-}
-
-void CPURegistersView::onIncrementPtrSize()
-{
-    if(mINCREMENTDECREMET.contains(mSelected))
-        setRegister(mSelected, (* ((duint*) registerValue(&wRegDumpStruct, mSelected))) + sizeof(void*));
-}
-
-void CPURegistersView::onDecrementPtrSize()
-{
-    if(mINCREMENTDECREMET.contains(mSelected))
-        setRegister(mSelected, (* ((duint*) registerValue(&wRegDumpStruct, mSelected))) - sizeof(void*));
-}
-
-void CPURegistersView::onPushAction()
-{
-    duint csp = (* ((duint*) registerValue(&wRegDumpStruct, CSP))) - sizeof(void*);
-    duint regVal = 0;
-    regVal = * ((duint*) registerValue(&wRegDumpStruct, mSelected));
-    setRegister(CSP, csp);
-    DbgMemWrite(csp, (const unsigned char*)&regVal, sizeof(void*));
-}
-
-void CPURegistersView::onPopAction()
-{
-    duint csp = (* ((duint*) registerValue(&wRegDumpStruct, CSP)));
-    duint newVal;
-    DbgMemRead(csp, (unsigned char*)&newVal, sizeof(void*));
-    setRegister(CSP, csp + sizeof(void*));
-    setRegister(mSelected, newVal);
+    {
+        duint value = *((duint*) registerValue(&wRegDumpStruct, mSelected));
+        setRegister(mSelected, value - 1);
+    }
 }
 
 void CPURegistersView::onZeroAction()
 {
-    if(mSETONEZEROTOGGLE.contains(mSelected))
-    {
-        if(mSelected >= x87r0 && mSelected <= x87r7 || mSelected >= x87st0 && mSelected <= x87st7)
-            setRegister(mSelected, reinterpret_cast<duint>("\0\0\0\0\0\0\0\0\0")); //9 zeros and 1 terminating zero
-        else
-            setRegister(mSelected, 0);
-    }
-}
-
-void CPURegistersView::onSetToOneAction()
-{
-    if(mSETONEZEROTOGGLE.contains(mSelected))
-    {
-        if(mSelected >= x87r0 && mSelected <= x87r7 || mSelected >= x87st0 && mSelected <= x87st7)
-            setRegister(mSelected, reinterpret_cast<duint>("\0\0\0\0\0\0\0\x80\xFF\x3F"));
-        else
-            setRegister(mSelected, 1);
-    }
-}
-
-void CPURegistersView::onModifyAction()
-{
-    if(mMODIFYDISPLAY.contains(mSelected))
-        displayEditDialog();
+    if(mINCREMENTDECREMET.contains(mSelected))
+        setRegister(mSelected, 0);
 }
 
 void CPURegistersView::onToggleValueAction()
@@ -525,6 +480,11 @@ void CPURegistersView::onUndoAction()
         else
             setRegister(mSelected, *(duint*)registerValue(&wCipRegDumpStruct, mSelected));
     }
+}
+
+void CPURegistersView::onCopyPreviousAction()
+{
+    Bridge::CopyToClipboard(wCM_CopyPrevious->data().toString());
 }
 
 void CPURegistersView::onHighlightSlot()
@@ -621,6 +581,13 @@ void CPURegistersView::displayCustomContextMenuSlot(QPoint pos)
             wMenu.addAction(wCM_Modify);
         }
 
+        if(mINCREMENTDECREMET.contains(mSelected))
+        {
+            wMenu.addAction(wCM_Increment);
+            wMenu.addAction(wCM_Decrement);
+            wMenu.addAction(wCM_Zero);
+        }
+
         if(mCANSTOREADDRESS.contains(mSelected))
         {
             duint addr = (* ((duint*) registerValue(&wRegDumpStruct, mSelected)));
@@ -666,24 +633,9 @@ void CPURegistersView::displayCustomContextMenuSlot(QPoint pos)
         if(mUNDODISPLAY.contains(mSelected) && CompareRegisters(mSelected, &wRegDumpStruct, &wCipRegDumpStruct) != 0)
         {
             wMenu.addAction(wCM_Undo);
-        }
-
-        if(mSETONEZEROTOGGLE.contains(mSelected))
-        {
-            if(mSelected >= x87r0 && mSelected <= x87r7 || mSelected >= x87st0 && mSelected <= x87st7)
-            {
-                if(memcmp(registerValue(&wRegDumpStruct, mSelected), "\0\0\0\0\0\0\0\0\0", 10) != 0)
-                    wMenu.addAction(wCM_Zero);
-                if(memcmp(registerValue(&wRegDumpStruct, mSelected), "\0\0\0\0\0\0\0\x80\xFF\x3F", 10) != 0)
-                    wMenu.addAction(wCM_SetToOne);
-            }
-            else
-            {
-                if((* ((duint*) registerValue(&wRegDumpStruct, mSelected))) != 0)
-                    wMenu.addAction(wCM_Zero);
-                if((* ((duint*) registerValue(&wRegDumpStruct, mSelected))) == 0)
-                    wMenu.addAction(wCM_SetToOne);
-            }
+            wCM_CopyPrevious->setData(GetRegStringValueFromValue(mSelected, registerValue(&wCipRegDumpStruct, mSelected)));
+            wCM_CopyPrevious->setText(tr("Copy old value: %1").arg(wCM_CopyPrevious->data().toString()));
+            wMenu.addAction(wCM_CopyPrevious);
         }
 
         if(mBOOLDISPLAY.contains(mSelected))
@@ -695,20 +647,6 @@ void CPURegistersView::displayCustomContextMenuSlot(QPoint pos)
         {
             wMenu.addAction(wCM_Incrementx87Stack);
             wMenu.addAction(wCM_Decrementx87Stack);
-        }
-
-        if(mINCREMENTDECREMET.contains(mSelected))
-        {
-            wMenu.addAction(wCM_Increment);
-            wMenu.addAction(wCM_Decrement);
-            wMenu.addAction(wCM_IncrementPtrSize);
-            wMenu.addAction(wCM_DecrementPtrSize);
-        }
-
-        if(mGPR.contains(mSelected) || mSelected == CIP)
-        {
-            wMenu.addAction(wCM_Push);
-            wMenu.addAction(wCM_Pop);
         }
 
         if(mFPUMMX.contains(mSelected) || mFPUXMM.contains(mSelected) || mFPUYMM.contains(mSelected))
@@ -741,7 +679,7 @@ void CPURegistersView::displayCustomContextMenuSlot(QPoint pos)
         if(mFpuMode != 2)
             wMenu.addAction(mDisplayMMX);
         wMenu.addSeparator();
-        QAction* wHwbpCsp = wMenu.addAction(DIcon("breakpoint.png"), tr("Set Hardware Breakpoint on %1").arg(ArchValue("ESP", "RSP")));
+        QAction* wHwbpCsp = wMenu.addAction(DIcon("breakpoint"), tr("Set Hardware Breakpoint on %1").arg(ArchValue("ESP", "RSP")));
         QAction* wAction = wMenu.exec(this->mapToGlobal(pos));
 
         if(wAction == wHwbpCsp)

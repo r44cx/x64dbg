@@ -308,43 +308,59 @@ bool isunicodestring(const WString & data)
 // These functions are exported so that plugins can use this to detect a string, or replace with a plugin-developed string dection algorithm through hooking
 extern "C" __declspec(dllexport) bool isasciistring(const unsigned char* data, int maxlen)
 {
-    int len = 0;
-    char* safebuffer = new char[maxlen];
-    if(!safebuffer)
-        return false;
-    for(const char* p = (const char*)data; *p; len++, p++)
+    if(bNewStringAlgorithm)
     {
-        if(len >= maxlen)
-            break;
-        safebuffer[p - (const char*)data] = *p;
-    }
+        int len = 0;
+        char* safebuffer = new char[maxlen];
+        if(!safebuffer)
+            return false;
+        for(const char* p = (const char*)data; *p && len < maxlen - 1; len++, p++)
+        {
+            safebuffer[p - (const char*)data] = *p;
+        }
 
-    if(len < 2)
-    {
+        if(len < 2)
+        {
+            delete[] safebuffer;
+            return false;
+        }
+        safebuffer[len] = 0; // Mark the end of string
+        if(len >= maxlen - 1 && (maxlen % 2) == 0 && (safebuffer[maxlen - 2] & 0x80))
+            safebuffer[maxlen - 2] = 0; // Keep DBCS strings from being chopped in the middle
+
+        String data2;
+        WString wdata2;
+        // Convert to and from Unicode
+        wdata2 = StringUtils::LocalCpToUtf16(safebuffer);
         delete[] safebuffer;
-        return false;
+        if(wdata2.size() < 2)
+            return false;
+        data2 = StringUtils::Utf16ToLocalCp(wdata2);
+        if(data2.size() < 2)
+            return false;
+        // Is the data exactly representable in both ANSI and Unicode?
+        if(memcmp(data2.c_str(), data, data2.size()) != 0)
+            return false;
+        // Filter out bad chars
+        if(!isunicodestring(wdata2))
+            return false;
+        return true;
     }
-    safebuffer[len - 1] = 0; // Mark the end of string
-    if((maxlen % 2) == 0 && (safebuffer[maxlen - 2] & 0x80))
-        safebuffer[maxlen - 2] = 0; // Keep DBCS strings from being chopped in the middle
-
-    String data2;
-    WString wdata2;
-    // Convert to and from Unicode
-    wdata2 = StringUtils::LocalCpToUtf16(safebuffer);
-    delete[] safebuffer;
-    if(wdata2.size() < 2)
-        return false;
-    data2 = StringUtils::Utf16ToLocalCp(wdata2);
-    if(data2.size() < 2)
-        return false;
-    // Is the data exactly representable in both ANSI and Unicode?
-    if(memcmp(data2.c_str(), data, data2.size()) != 0)
-        return false;
-    // Filter out bad chars
-    if(!isunicodestring(wdata2))
-        return false;
-    return true;
+    else
+    {
+        int len = 0;
+        for(const char* p = (const char*)data; *p; len++, p++)
+        {
+            if(len >= maxlen)
+                break;
+        }
+        if(len < 2)
+            return false;
+        for(int i = 0; i < len; i++)
+            if(!isprint(data[i]) && !isspace(data[i]))
+                return false;
+        return true;
+    }
 }
 
 extern "C" __declspec(dllexport) bool isunicodestring(const unsigned char* data, int maxlen)
@@ -353,10 +369,8 @@ extern "C" __declspec(dllexport) bool isunicodestring(const unsigned char* data,
     wchar_t* safebuffer = new wchar_t[maxlen];
     if(!safebuffer)
         return false;
-    for(const wchar_t* p = (const wchar_t*)data; *p; len += sizeof(wchar_t), p++)
+    for(const wchar_t* p = (const wchar_t*)data; *p && len < maxlen - 1; len += sizeof(wchar_t), p++)
     {
-        if(len >= maxlen)
-            break;
         safebuffer[p - (const wchar_t*)data] = *p;
     }
 
@@ -365,7 +379,7 @@ extern "C" __declspec(dllexport) bool isunicodestring(const unsigned char* data,
         delete[] safebuffer;
         return false;
     }
-    safebuffer[len / sizeof(wchar_t) - 1] = 0; // Mark the end of string
+    safebuffer[len / sizeof(wchar_t)] = 0; // Mark the end of string
 
     String data2;
     WString wdata2;

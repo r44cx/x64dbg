@@ -213,7 +213,7 @@ bool pluginload(const char* pluginName, bool loadall)
 
     //add plugin menus
     {
-        SectionLocker<LockPluginMenuList, false> menuLock; //exclusive lock
+        SectionLocker<LockPluginMenuList, false, false> menuLock; //exclusive lock
 
         auto addPluginMenu = [](GUIMENUTYPE type)
         {
@@ -349,6 +349,8 @@ bool pluginunload(const char* pluginName, bool unloadall)
     return false;
 }
 
+typedef BOOL(WINAPI* pfnAddDllDirectory)(LPCWSTR lpPathName);
+
 /**
 \brief Loads plugins from a specified directory.
 \param pluginDir The directory to load plugins from.
@@ -358,11 +360,19 @@ void pluginloadall(const char* pluginDir)
     //reserve menu space
     pluginMenuList.reserve(1024);
     pluginMenuEntryList.reserve(1024);
+
     //load new plugins
     wchar_t currentDir[deflen] = L"";
     pluginDirectory = StringUtils::Utf8ToUtf16(pluginDir);
+
+    //add the plugins directory as valid dependency directory
+    static auto pAddDllDirectory = (pfnAddDllDirectory)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "AddDllDirectory");
+    if(pAddDllDirectory)
+        pAddDllDirectory(pluginDirectory.c_str());
+
     GetCurrentDirectoryW(deflen, currentDir);
     SetCurrentDirectoryW(pluginDirectory.c_str());
+
     char searchName[deflen] = "";
 #ifdef _WIN64
     sprintf_s(searchName, "%s\\*.dp64", pluginDir);
@@ -381,6 +391,7 @@ void pluginloadall(const char* pluginDir)
         pluginload(StringUtils::Utf16ToUtf8(foundData.cFileName).c_str(), true);
     }
     while(FindNextFileW(hSearch, &foundData));
+
     FindClose(hSearch);
     SetCurrentDirectoryW(currentDir);
 }
@@ -765,7 +776,7 @@ void pluginmenucall(int hEntry)
     if(hEntry == -1)
         return;
 
-    SectionLocker<LockPluginMenuList, true> menuLock; //shared lock
+    SectionLocker<LockPluginMenuList, true, false> menuLock; //shared lock
     auto i = pluginMenuEntryList.begin();
     while(i != pluginMenuEntryList.end())
     {
@@ -949,7 +960,9 @@ void pluginmenuentrysethotkey(int pluginHandle, int hEntry, const char* hotkey)
                 {
                     char name[MAX_PATH] = "";
                     strcpy_s(name, plugin.plugname);
-                    *strrchr(name, '.') = '\0';
+                    auto dot = strrchr(name, '.');
+                    if(dot != nullptr)
+                        *dot = '\0';
                     auto hack = StringUtils::sprintf("%s\1%s_%d", hotkey, name, hEntry);
                     GuiMenuSetEntryHotkey(currentMenu.hEntryMenu, hack.c_str());
                     break;
@@ -1049,7 +1062,7 @@ bool pluginexprfuncregisterex(int pluginHandle, const char* name, const ValueTyp
 
     std::vector<ValueType> argTypesVec(argCount);
 
-    for(auto i = 0; i < argCount; i++)
+    for(size_t i = 0; i < argCount; i++)
         argTypesVec[i] = argTypes[i];
 
     if(!ExpressionFunctions::Register(name, returnType, argTypesVec, cbFunction, userdata))

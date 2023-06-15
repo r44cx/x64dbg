@@ -57,7 +57,7 @@ bool ConstantCodeInit(const String & constantFile)
     std::unordered_map<unsigned int, String> names;
     if(!UniversalCodeInit(constantFile, names, 0))
         return false;
-    for(auto it : names)
+    for(const auto & it : names)
         Constants.insert({ it.second, it.first });
     return true;
 }
@@ -246,7 +246,7 @@ bool SyscallInit()
     {
         for(auto & syscall : Win32kSyscalls)
         {
-            auto index = syscall.GetSyscallIndex(versionInfo.dwBuildNumber, ArchValue(true, false));
+            auto index = syscall.GetSyscallIndex((USHORT)versionInfo.dwBuildNumber, ArchValue(true, false));
             if(index != -1)
                 SyscallIndices.insert({ index, syscall.Name });
         }
