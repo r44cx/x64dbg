@@ -71,6 +71,23 @@ bool cbInstrMul(int argc, char* argv[])
     return cmddirectexec(StringUtils::sprintf("%s*=%s", argv[1], argv[2]).c_str());
 }
 
+bool cbInstrMulhi(int argc, char* argv[])
+{
+    duint value2;
+    if(IsArgumentsLessThan(argc, 3) || !valfromstring(argv[2], &value2, false))
+        return false;
+
+    return ReadWriteVariable(argv[1], [value2](duint * value, int size)
+    {
+#ifdef _WIN64
+        *value = UnsignedMultiplyHigh(*value, value2);
+#else //x86
+        *value = (((unsigned long long)value2) * (*value)) >> 32;
+#endif
+        return true;
+    });
+}
+
 bool cbInstrDiv(int argc, char* argv[])
 {
     if(IsArgumentsLessThan(argc, 3))
@@ -249,6 +266,91 @@ bool cbInstrPop(int argc, char* argv[])
     return true;
 }
 
+bool cbInstrPopcnt(int argc, char* argv[])
+{
+    if(IsArgumentsLessThan(argc, 3))
+        return false;
+    duint arg = 0;
+    if(!valfromstring(argv[2], &arg, false))
+        return false;
+    duint ezflag;
+    duint bsflag = 0;
+    if(arg == 0)
+    {
+        ezflag = 1;
+    }
+    else
+    {
+        ezflag = 0;
+#ifdef _WIN64
+        arg = __popcnt64(arg);
+#else //x86
+        arg = __popcnt(arg);
+#endif
+        bool isvar = false;
+        duint temp = 0;
+        valfromstring(argv[1], &temp, true, true, 0, &isvar, 0); //there is no return check on this because the destination might not exist yet
+        if(!isvar)
+            isvar = vargettype(argv[1], 0);
+        if(!isvar || !valtostring(argv[1], arg, true))
+        {
+            duint value;
+            if(valfromstring(argv[1], &value))  //if the var is a value already it's an invalid destination
+            {
+                dprintf(QT_TRANSLATE_NOOP("DBG", "Invalid dest \"%s\"\n"), argv[1]);
+                return false;
+            }
+            varnew(argv[1], arg, VAR_USER);
+        }
+    }
+    varset("$_EZ_FLAG", ezflag, true);
+    varset("$_BS_FLAG", bsflag, true);
+    return true;
+}
+
+bool cbInstrLzcnt(int argc, char* argv[])
+{
+    if(IsArgumentsLessThan(argc, 3))
+        return false;
+    duint arg = 0;
+    if(!valfromstring(argv[2], &arg, false))
+        return false;
+    duint ezflag;
+    duint bsflag = 0;
+    if(arg == 0)
+    {
+        ezflag = 1;
+        arg = sizeof(duint);
+    }
+    else
+    {
+        ezflag = 0;
+#ifdef _WIN64
+        arg = __lzcnt64(arg);
+#else //x86
+        arg = __lzcnt(arg);
+#endif
+        bool isvar = false;
+        duint temp = 0;
+        valfromstring(argv[1], &temp, true, true, 0, &isvar, 0); //there is no return check on this because the destination might not exist yet
+        if(!isvar)
+            isvar = vargettype(argv[1], 0);
+        if(!isvar || !valtostring(argv[1], arg, true))
+        {
+            duint value;
+            if(valfromstring(argv[1], &value))  //if the var is a value already it's an invalid destination
+            {
+                dprintf(QT_TRANSLATE_NOOP("DBG", "Invalid dest \"%s\"\n"), argv[1]);
+                return false;
+            }
+            varnew(argv[1], arg, VAR_USER);
+        }
+    }
+    varset("$_EZ_FLAG", ezflag, true);
+    varset("$_BS_FLAG", bsflag, true);
+    return true;
+}
+
 bool cbInstrTest(int argc, char* argv[])
 {
     //TODO: test
@@ -364,4 +466,116 @@ bool cbInstrMov(int argc, char* argv[])
         }
     }
     return true;
+}
+
+bool cbInstrMovdqu(int argc, char* argv[])
+{
+    if(IsArgumentsLessThan(argc, 3))
+        return false;
+    String dstText = argv[1];
+    String srcText = argv[2];
+    duint address = 0;
+    DWORD registerindex = 0;
+    if(srcText[0] == '[' && srcText[srcText.length() - 1] == ']' && _memicmp(dstText.c_str(), "xmm", 3) == 0)
+    {
+        char newValue[16];
+        // movdqu xmm0, [address]
+        dstText = dstText.substr(3);
+        srcText = srcText.substr(1, srcText.size() - 2);
+        DWORD registerindex;
+        bool found = true;
+        registerindex = atoi(dstText.c_str());
+        if(registerindex < ArchValue(8, 16))
+        {
+            registerindex += UE_XMM0;
+        }
+        else
+        {
+            goto InvalidDest;
+        }
+        if(!valfromstring(srcText.c_str(), &address))
+        {
+            goto InvalidSrc;
+        }
+        if(!MemRead(address, newValue, 16))
+        {
+            dputs(QT_TRANSLATE_NOOP("DBG", "Failed to read (all) memory..."));
+            return false;
+        }
+        SetContextDataEx(hActiveThread, registerindex, (ULONG_PTR)newValue);
+        GuiUpdateAllViews(); //refresh disassembly/dump/etc
+        return true;
+    }
+    else if(dstText[0] == '[' && dstText[dstText.length() - 1] == ']' && _memicmp(srcText.c_str(), "xmm", 3) == 0)
+    {
+        // movdqu [address], xmm0
+        srcText = srcText.substr(3);
+        dstText = dstText.substr(1, dstText.size() - 2);
+        DWORD registerindex;
+        bool found = true;
+        registerindex = atoi(srcText.c_str());
+        if(registerindex >= ArchValue(8, 16))
+        {
+            goto InvalidSrc;
+        }
+        if(!valfromstring(dstText.c_str(), &address) || !MemIsValidReadPtr(address))
+        {
+            goto InvalidDest;
+        }
+        REGDUMP registers;
+        if(!DbgGetRegDumpEx(&registers, sizeof(registers)))
+        {
+            dputs(QT_TRANSLATE_NOOP("DBG", "Failed to read register context..."));
+            return false;
+        }
+        if(!MemWrite(address, &registers.regcontext.XmmRegisters[registerindex], 16))
+        {
+            dprintf(QT_TRANSLATE_NOOP("DBG", "Failed to write to %p\n"), address);
+            return false;
+        }
+        GuiUpdateAllViews(); //refresh disassembly/dump/etc
+        return true;
+    }
+    else if(_memicmp(srcText.c_str(), "xmm", 3) == 0 && _memicmp(dstText.c_str(), "xmm", 3) == 0)
+    {
+        // movdqu xmm0, xmm1
+        srcText = srcText.substr(3);
+        dstText = dstText.substr(3);
+        DWORD registerindex[2];
+        bool found = true;
+        registerindex[0] = atoi(srcText.c_str());
+        if(registerindex[0] >= ArchValue(8, 16))
+        {
+            goto InvalidSrc;
+        }
+        registerindex[1] = atoi(dstText.c_str());
+        if(registerindex[1] < ArchValue(8, 16))
+        {
+            registerindex[1] += UE_XMM0;
+        }
+        else
+        {
+            goto InvalidDest;
+        }
+        REGDUMP registers;
+        if(!DbgGetRegDumpEx(&registers, sizeof(registers)))
+        {
+            dputs(QT_TRANSLATE_NOOP("DBG", "Failed to read register context..."));
+            return false;
+        }
+        SetContextDataEx(hActiveThread, registerindex[1], (ULONG_PTR)&registers.regcontext.XmmRegisters[registerindex[0]]);
+        GuiUpdateAllViews(); //refresh disassembly/dump/etc
+        return true;
+    }
+    else
+    {
+        dputs(QT_TRANSLATE_NOOP("DBG", "Usage: movdqu xmm0, [address] / movdqu [address], xmm0 / movdqu xmm0, xmm1"));
+        return false;
+    }
+InvalidSrc:
+    dprintf(QT_TRANSLATE_NOOP("DBG", "Invalid src \"%s\"\n"), argv[2]);
+    return false;
+InvalidDest:
+    dprintf(QT_TRANSLATE_NOOP("DBG", "Invalid dest \"%s\"\n"), argv[1]);
+    return false;
 }

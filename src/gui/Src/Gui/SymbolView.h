@@ -20,7 +20,7 @@ class SymbolView : public QWidget
     Q_OBJECT
 
 public:
-    explicit SymbolView(QWidget* parent = 0);
+    explicit SymbolView(QWidget* parent = nullptr);
     ~SymbolView() override;
     void setupContextMenu();
     void saveWindowSettings();
@@ -30,18 +30,20 @@ public:
 
 private slots:
     void updateStyle();
+    void reloadDataSlot();
     void addMsgToSymbolLogSlot(QString msg);
     void clearSymbolLogSlot();
-    void moduleSelectionChanged(int index);
+    void moduleSelectionChanged(duint index);
     void updateSymbolList(int module_count, SYMBOLMODULEINFO* modules);
     void symbolFollow();
     void symbolFollowDump();
     void symbolFollowImport();
     void symbolSelectModule(duint base);
     void enterPressedSlot();
-    void symbolContextMenu(QMenu* wMenu);
+    void symbolContextMenu(QMenu* menu);
     void symbolRefreshCurrent();
-    void moduleContextMenu(QMenu* wMenu);
+    void labelHelpSlot();
+    void moduleContextMenu(QMenu* menu);
     void moduleFollow();
     void moduleEntryFollow();
     void moduleDownloadSymbols();
@@ -89,6 +91,7 @@ private:
     QAction* mFollowInMemMap;
     QAction* mLoadLib;
     QAction* mFreeLib;
+    QAction* mLabelHelp;
     QMenu* mPluginMenu;
 
     static void cbSymbolEnum(SYMBOLINFO* symbol, void* user);

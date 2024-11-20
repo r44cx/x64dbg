@@ -33,7 +33,7 @@ AttachDialog::AttachDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Attach
 
     //setup process list
     int charwidth = mSearchListView->getCharWidth();
-    mSearchListView->addColumnAt(charwidth * sizeof(int) * 2 + 8, tr("PID"), true, QString(), ConfigBool("Gui", "PidTidInHex") ? StdTable::SortBy::AsHex : StdTable::SortBy::AsInt);
+    mSearchListView->addColumnAt(charwidth * sizeof(int) * 2 + 8, tr("PID"), true, QString(), StdTable::SortBy::AsInt);
     mSearchListView->addColumnAt(150, tr("Name"), true);
     mSearchListView->addColumnAt(300, tr("Title"), true);
     mSearchListView->addColumnAt(500, tr("Path"), true);
@@ -47,7 +47,7 @@ AttachDialog::AttachDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Attach
     // Highlight the search box
     mSearchListView->mCurList->setFocus();
 
-    Config()->setupWindowPos(this);
+    Config()->loadWindowGeometry(this);
 
     // Populate the process list atleast once
     refresh();
@@ -55,7 +55,7 @@ AttachDialog::AttachDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Attach
 
 AttachDialog::~AttachDialog()
 {
-    Config()->saveWindowPos(this);
+    Config()->saveWindowGeometry(this);
     delete ui;
 }
 
@@ -70,7 +70,7 @@ void AttachDialog::refresh()
     for(int i = 0; i < count; i++)
     {
         QFileInfo fi(entries[i].szExeFile);
-        mSearchListView->setCellContent(i, ColPid, QString().sprintf(ConfigBool("Gui", "PidTidInHex") ? "%.8X" : "%u", entries[i].dwProcessId));
+        mSearchListView->setCellContent(i, ColPid, QString().sprintf("%u", entries[i].dwProcessId));
         mSearchListView->setCellContent(i, ColName, fi.baseName());
         mSearchListView->setCellContent(i, ColTitle, QString(entries[i].szExeMainWindowTitle));
         mSearchListView->setCellContent(i, ColPath, QString(entries[i].szExeFile));
@@ -84,7 +84,7 @@ void AttachDialog::refresh()
 void AttachDialog::on_btnAttach_clicked()
 {
     QString pid = mSearchListView->mCurList->getCellContent(mSearchListView->mCurList->getInitialSelection(), ColPid);
-    DbgCmdExec(QString("attach %1%2").arg(ConfigBool("Gui", "PidTidInHex") ? "" : ".").arg(pid));
+    DbgCmdExec(QString("attach %1%2").arg(".").arg(pid));
     accept();
 }
 
@@ -110,9 +110,9 @@ retryFindWindow:
         if(tid = GetWindowThreadProcessId(hWndFound, &pid))
         {
             refresh();
-            QString pidText = QString().sprintf(ConfigBool("Gui", "PidTidInHex") ? "%.8X" : "%u", pid);
+            QString pidText = QString().sprintf("%u", pid);
             bool found = false;
-            for(int i = 0; i < mSearchListView->mCurList->getRowCount(); i++)
+            for(duint i = 0; i < mSearchListView->mCurList->getRowCount(); i++)
             {
                 if(mSearchListView->mCurList->getCellContent(i, ColPid) == pidText)
                 {
@@ -138,12 +138,12 @@ retryFindWindow:
     }
 }
 
-void AttachDialog::processListContextMenu(QMenu* wMenu)
+void AttachDialog::processListContextMenu(QMenu* menu)
 {
     // Don't show menu options if nothing is listed
     if(!mSearchListView->mCurList->getRowCount())
         return;
 
-    wMenu->addAction(mAttachAction);
-    wMenu->addAction(mRefreshAction);
+    menu->addAction(mAttachAction);
+    menu->addAction(mRefreshAction);
 }

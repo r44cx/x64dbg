@@ -144,6 +144,8 @@ QString getSymbolicNameStr(duint addr)
         finalText = QString("%1.%2").arg(moduleText).arg(addrText);
     else if(bHasLabel) //<label>
         finalText = QString("<%1>").arg(labelText);
+    else if(addr == 0)
+        finalText = addrText;
     else
     {
         finalText = addrText;
@@ -159,13 +161,25 @@ QString getSymbolicNameStr(duint addr)
             if(c.isPrint() || c.isSpace())
                 finalText += QString(" L'%1'").arg(EscapeCh(c));
         }
+        else if((addr & 0xFFFFFFFFF0000000ull) == 0xC0000000)
+        {
+            auto format = QString("{ntstatus@%1}").arg(ToHexString(addr));
+            if(DbgFunctions()->StringFormatInline(format.toUtf8().constData(), sizeof(string), string))
+            {
+                auto colon = strchr(string, ':');
+                if(colon)
+                    *colon = '\0';
+                finalText += " ";
+                finalText += string;
+            }
+        }
     }
     return finalText;
 }
 
 QIcon getFileIcon(QString file)
 {
-    SHFILEINFO info;
+    SHFILEINFOW info;
     if(SHGetFileInfoW((const wchar_t*)file.utf16(), 0, &info, sizeof(info), SHGFI_ICON) == 0)
         return QIcon(); //API error
     QIcon result = QIcon(QtWin::fromHICON(info.hIcon));
@@ -296,6 +310,12 @@ bool ExportCSV(dsint rows, dsint columns, std::vector<QString> headers, std::fun
         return false;
 }
 
+static bool allowIcons()
+{
+    duint setting = 0;
+    return !BridgeSettingGetUint("Gui", "NoIcons", &setting) || !setting;
+}
+
 static bool allowSeasons()
 {
     srand(GetTickCount());
@@ -337,6 +357,9 @@ QIcon DIconHelper(QString name)
 {
     if(name.endsWith(".png"))
         name = name.left(name.length() - 4);
+    static bool icons = allowIcons();
+    if(!icons)
+        return QIcon();
     static bool seasons = allowSeasons();
     static bool christmas = isChristmas();
     static bool easter = isEaster();
@@ -365,15 +388,7 @@ QString getDbPath(const QString & filename, bool addDateTimeSuffix)
             {
                 extensionIdx = path.length();
             }
-            auto now = QDateTime::currentDateTime();
-            auto suffix = QString().sprintf("-%04d%02d%02d-%02d%02d%02d",
-                                            now.date().year(),
-                                            now.date().month(),
-                                            now.date().day(),
-                                            now.time().hour(),
-                                            now.time().minute(),
-                                            now.time().second()
-                                           );
+            auto suffix = "-" + isoDateTime();
             path.insert(extensionIdx, suffix);
         }
     }

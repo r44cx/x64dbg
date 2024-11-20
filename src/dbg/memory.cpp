@@ -24,6 +24,14 @@ std::map<Range, MEMPAGE, RangeCompare> memoryPages;
 bool bListAllPages = false;
 bool bQueryWorkingSet = false;
 
+// Get system information once.
+static const SYSTEM_INFO systemInfo = []()
+{
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return si;
+}();
+
 static std::vector<MEMPAGE> QueryMemPages()
 {
     // First gather all possible pages in the memory range
@@ -31,7 +39,7 @@ static std::vector<MEMPAGE> QueryMemPages()
     pages.reserve(200); //TODO: provide a better estimate
 
     SIZE_T numBytes = 0;
-    duint pageStart = 0;
+    duint pageStart = (duint)systemInfo.lpMinimumApplicationAddress;
     duint allocationBase = 0;
 
     do
@@ -88,7 +96,7 @@ static std::vector<MEMPAGE> QueryMemPages()
             else
             {
                 // Otherwise append the page to the last created entry
-                if(pages.size())        //make sure to not dereference an invalid pointer
+                if(pages.size()) //make sure to not dereference an invalid pointer
                     pages.back().mbi.RegionSize += mbi.RegionSize;
             }
         }
@@ -106,7 +114,7 @@ static std::vector<MEMPAGE> QueryMemPages()
     return pages;
 }
 
-static void ProcessFileSections(std::vector<MEMPAGE> & pageVector)
+static void ProcessFileSections(std::vector<MEMPAGE> & pageVector, std::vector<String> & errors)
 {
     if(pageVector.empty())
         return;
@@ -159,7 +167,7 @@ static void ProcessFileSections(std::vector<MEMPAGE> & pageVector)
                 // Spam the user with errors to hopefully get more information
                 std::string summary;
                 summary = StringUtils::sprintf("The module at %p (%s%s) triggers a weird bug, please report an issue\n",  modBase, modInfo->name, modInfo->extension);
-                GuiAddLogMessage(summary.c_str());
+                errors.push_back(std::move(summary));
             }
         }
 
@@ -192,6 +200,27 @@ static void ProcessFileSections(std::vector<MEMPAGE> & pageVector)
                     section.size += sizeOfImage - totalSize;
             }
         }
+
+        auto listIncludedSections = [&]()
+        {
+            size_t infoOffset = 0;
+            // Display module name in first region (useful if PE header and first section have same protection)
+            if(pageBase == modBase)
+                infoOffset = strlen(currentPage.info);
+            for(size_t j = 0; j < sections.size() && infoOffset + 1 < _countof(currentPage.info); j++)
+            {
+                const auto & currentSection = sections.at(j);
+                duint sectionStart = currentSection.addr;
+                duint sectionEnd = sectionStart + currentSection.size;
+                // Check if the section and page overlap
+                if(pageBase < sectionEnd && pageBase + pageSize > sectionStart)
+                {
+                    if(infoOffset)
+                        infoOffset += _snprintf_s(currentPage.info + infoOffset, sizeof(currentPage.info) - infoOffset, _TRUNCATE, ",");
+                    infoOffset += _snprintf_s(currentPage.info + infoOffset, sizeof(currentPage.info) - infoOffset, _TRUNCATE, " \"%s\"", currentSection.name);
+                }
+            }
+        };
 
         // Section view
         if(!bListAllPages)
@@ -229,6 +258,19 @@ static void ProcessFileSections(std::vector<MEMPAGE> & pageVector)
             for(const auto & page : newPages)
                 totalSize += page.mbi.RegionSize;
 
+            // On Windows 11 24H2+, modules that support hotpatching contain an extra page mapped into their image region
+            // Reference: https://ynwarcs.github.io/Win11-24H2-CFG
+            static auto buildNumber = BridgeGetNtBuildNumber();
+            if(buildNumber >= 26100 && totalSize + 0x1000 == pageSize)
+            {
+                MEMPAGE imageExtensionPage = {};
+                imageExtensionPage.mbi.BaseAddress = (PVOID)(pageBase + totalSize);
+                imageExtensionPage.mbi.RegionSize = pageSize - totalSize;
+                sprintf_s(imageExtensionPage.info, "ImageExtension");
+                newPages.push_back(imageExtensionPage);
+                totalSize = pageSize;
+            }
+
             // Replace the single module page with the sections
             // newPages should never be empty, but try to avoid data loss if it is
             if(!newPages.empty() && totalSize == pageSize)
@@ -247,30 +289,16 @@ static void ProcessFileSections(std::vector<MEMPAGE> & pageVector)
                 for(const auto & page : newPages)
                     summary += StringUtils::sprintf(" \"%s\": %p[%p]\n", page.info, page.mbi.BaseAddress, page.mbi.RegionSize);
                 summary += "Please report an issue!\n";
-                GuiAddLogMessage(summary.c_str());
-                strncat_s(currentPage.info, " (error, see log)", _TRUNCATE);
+                errors.push_back(std::move(summary));
+
+                // Fall back to the 'list all pages' algorithm
+                listIncludedSections();
             }
         }
         // List all pages
         else
         {
-            size_t infoOffset = 0;
-            // Display module name in first region (useful if PE header and first section have same protection)
-            if(pageBase == modBase)
-                infoOffset = strlen(currentPage.info);
-            for(size_t j = 0; j < sections.size() && infoOffset + 1 < _countof(currentPage.info); j++)
-            {
-                const auto & currentSection = sections.at(j);
-                duint sectionStart = currentSection.addr;
-                duint sectionEnd = sectionStart + currentSection.size;
-                // Check if the section and page overlap
-                if(pageBase < sectionEnd && pageBase + pageSize > sectionStart)
-                {
-                    if(infoOffset)
-                        infoOffset += _snprintf_s(currentPage.info + infoOffset, sizeof(currentPage.info) - infoOffset, _TRUNCATE, ",");
-                    infoOffset += _snprintf_s(currentPage.info + infoOffset, sizeof(currentPage.info) - infoOffset, _TRUNCATE, " \"%s\"", currentSection.name);
-                }
-            }
+            listIncludedSections();
         }
     }
 }
@@ -305,6 +333,7 @@ static void ProcessSystemPages(std::vector<MEMPAGE> & pageVector)
     auto HeapCount = min(_countof(ProcessHeaps), NumberOfHeaps);
     MemRead(ProcessHeapsPtr, ProcessHeaps, sizeof(duint) * HeapCount);
     std::unordered_map<duint, uint32_t> processHeapIds;
+    processHeapIds.reserve(HeapCount);
     for(uint32_t i = 0; i < HeapCount; i++)
         processHeapIds.emplace(ProcessHeaps[i], i);
 
@@ -396,7 +425,8 @@ void MemUpdateMap()
     std::vector<MEMPAGE> pageVector = QueryMemPages();
 
     // Process file sections
-    ProcessFileSections(pageVector);
+    std::vector<String> errors;
+    ProcessFileSections(pageVector, errors);
 
     // Get a list of threads for information about Kernel/PEB/TEB/Stack ranges
     ProcessSystemPages(pageVector);
@@ -405,11 +435,22 @@ void MemUpdateMap()
     EXCLUSIVE_ACQUIRE(LockMemoryPages);
     memoryPages.clear();
 
+    // Print the annoying errors only once
+    static std::unordered_set<String> shownErrors;
+    for(auto & error : errors)
+    {
+        if(shownErrors.count(error) == 0)
+        {
+            GuiAddLogMessage(error.c_str());
+            shownErrors.insert(std::move(error));
+        }
+    }
+
     for(const auto & page : pageVector)
     {
         duint start = (duint)page.mbi.BaseAddress;
         duint size = (duint)page.mbi.RegionSize;
-        memoryPages.insert(std::make_pair(std::make_pair(start, start + size - 1), page));
+        memoryPages.emplace(std::make_pair(start, start + size - 1), page);
     }
 }
 
@@ -443,7 +484,7 @@ duint MemFindBaseAddr(duint Address, duint* Size, bool Refresh, bool FindReserve
     if(found == memoryPages.end())
         return 0;
 
-    if(!FindReserved && found->second.mbi.State == MEM_RESERVE)        //check if the current page is reserved.
+    if(!FindReserved && found->second.mbi.State == MEM_RESERVE) //check if the current page is reserved.
         return 0;
 
     // Return the allocation region size when requested
@@ -498,12 +539,13 @@ bool MemRead(duint BaseAddress, void* Buffer, duint Size, duint* NumberOfBytesRe
     if(cache && !MemIsValidReadPtr(BaseAddress, true))
         return false;
 
-    if(!Buffer || !Size)
+    if(!Buffer)
         return false;
 
     duint bytesReadTemp = 0;
     if(!NumberOfBytesRead)
         NumberOfBytesRead = &bytesReadTemp;
+    *NumberOfBytesRead = 0;
 
     duint offset = 0;
     duint requestedSize = Size;
@@ -547,12 +589,13 @@ bool MemReadUnsafe(duint BaseAddress, void* Buffer, duint Size, duint* NumberOfB
     if(!MemIsCanonicalAddress(BaseAddress) || BaseAddress < PAGE_SIZE || !DbgIsDebugging())
         return false;
 
-    if(!Buffer || !Size)
+    if(!Buffer)
         return false;
 
     duint bytesReadTemp = 0;
     if(!NumberOfBytesRead)
         NumberOfBytesRead = &bytesReadTemp;
+    *NumberOfBytesRead = 0;
 
     duint offset = 0;
     duint requestedSize = Size;
@@ -594,12 +637,13 @@ bool MemWrite(duint BaseAddress, const void* Buffer, duint Size, duint* NumberOf
     if(!MemIsCanonicalAddress(BaseAddress))
         return false;
 
-    if(!Buffer || !Size)
+    if(!Buffer)
         return false;
 
     SIZE_T bytesWrittenTemp = 0;
     if(!NumberOfBytesWritten)
         NumberOfBytesWritten = &bytesWrittenTemp;
+    *NumberOfBytesWritten = 0;
 
     duint offset = 0;
     duint requestedSize = Size;
@@ -629,8 +673,8 @@ bool MemWrite(duint BaseAddress, const void* Buffer, duint Size, duint* NumberOf
 
 bool MemPatch(duint BaseAddress, const void* Buffer, duint Size, duint* NumberOfBytesWritten)
 {
-    // Buffer and size must be valid
-    if(!Buffer || Size <= 0)
+    // Buffer must be valid
+    if(!Buffer)
         return false;
 
     // Allocate the memory
@@ -749,7 +793,7 @@ bool MemGetPageRights(duint Address, char* Rights)
 
 bool MemPageRightsToString(DWORD Protect, char* Rights)
 {
-    if(!Protect)        //reserved pages don't have a protection (https://goo.gl/Izkk0c)
+    if(!Protect) //reserved pages don't have a protection (https://goo.gl/Izkk0c)
     {
         *Rights = '\0';
         return true;
@@ -1016,7 +1060,7 @@ bool MemGetProtect(duint Address, bool Reserved, bool Cache, unsigned int* Prote
         auto found = memoryPages.find({ Address, Address });
         if(found == memoryPages.end())
             return false;
-        if(!Reserved && found->second.mbi.State == MEM_RESERVE)     //check if the current page is reserved.
+        if(!Reserved && found->second.mbi.State == MEM_RESERVE) //check if the current page is reserved.
             return false;
 
         *Protect = found->second.mbi.Protect;

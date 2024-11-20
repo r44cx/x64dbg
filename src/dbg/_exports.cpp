@@ -102,8 +102,8 @@ extern "C" DLL_EXPORT bool _dbg_isjumpgoingtoexecute(duint addr)
     unsigned char data[16];
     if(MemRead(addr, data, sizeof(data), nullptr, true))
     {
-        Zydis cp;
-        if(cp.Disassemble(addr, data))
+        Zydis zydis;
+        if(zydis.Disassemble(addr, data))
         {
             CONTEXT ctx;
             memset(&ctx, 0, sizeof(ctx));
@@ -116,7 +116,7 @@ extern "C" DLL_EXPORT bool _dbg_isjumpgoingtoexecute(duint addr)
             auto cflags = ctx.EFlags;
             auto ccx = ctx.Ecx;
 #endif //_WIN64
-            return cp.IsBranchGoingToExecute(cflags, ccx);
+            return zydis.IsBranchGoingToExecute(cflags, ccx);
         }
     }
     return false;
@@ -329,11 +329,11 @@ static bool getAutoComment(duint addr, String & comment)
     BRIDGE_ADDRINFO newinfo;
     char string_text[MAX_STRING_SIZE] = "";
 
-    Zydis cp;
+    Zydis zydis;
     auto getregs = !bOnlyCipAutoComments || addr == lastContext.cip;
-    disasmget(cp, addr, &instr, getregs);
+    disasmget(zydis, addr, &instr, getregs);
     // Some nop variants have 'operands' that should be ignored
-    if(cp.Success() && !cp.IsNop())
+    if(zydis.Success() && !zydis.IsNop())
     {
         //Ignore register values when not on CIP and OnlyCipAutoComments is enabled: https://github.com/x64dbg/x64dbg/issues/1383
         if(!getregs)
@@ -342,7 +342,7 @@ static bool getAutoComment(duint addr, String & comment)
                 instr.arg[i].value = instr.arg[i].constant;
         }
 
-        if(addr == lastContext.cip && (cp.GetId() == ZYDIS_MNEMONIC_SYSCALL || (cp.GetId() == ZYDIS_MNEMONIC_INT && cp[0].imm.value.u == 0x2e)))
+        if(addr == lastContext.cip && (zydis.GetId() == ZYDIS_MNEMONIC_SYSCALL || (zydis.GetId() == ZYDIS_MNEMONIC_INT && zydis[0].imm.value.u == 0x2e)))
         {
             auto syscallName = SyscallToName((unsigned int)lastContext.cax);
             if(!syscallName.empty())
@@ -367,9 +367,9 @@ static bool getAutoComment(duint addr, String & comment)
             if(instr.arg[i].constant == instr.arg[i].value)  //avoid: call <module.label> ; addr:label
             {
                 auto constant = instr.arg[i].constant;
-                if(instr.arg[i].type == arg_normal && instr.arg[i].value == addr + instr.instr_size && cp.IsCall())
+                if(instr.arg[i].type == arg_normal && instr.arg[i].value == addr + instr.instr_size && zydis.IsCall())
                     temp_string.assign("call $0");
-                else if(instr.arg[i].type == arg_normal && instr.arg[i].value == addr + instr.instr_size && cp.IsJump())
+                else if(instr.arg[i].type == arg_normal && instr.arg[i].value == addr + instr.instr_size && zydis.IsJump())
                     temp_string.assign("jmp $0");
                 else if(instr.type == instr_branch)
                     continue;
@@ -456,7 +456,7 @@ static bool getAutoComment(duint addr, String & comment)
             if(!temp_string.empty())
                 temp_string += ", ";
         };
-        if(*bp.breakCondition)
+        if(!bp.breakCondition.empty())
         {
             next();
             temp_string += GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "breakif"));
@@ -472,10 +472,10 @@ static bool getAutoComment(duint addr, String & comment)
         }
         else //fast resume skips all other steps
         {
-            if(*bp.logText)
+            if(!bp.logText.empty())
             {
                 next();
-                if(*bp.logCondition)
+                if(!bp.logCondition.empty())
                 {
                     temp_string += GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "logif"));
                     temp_string += "(";
@@ -491,10 +491,10 @@ static bool getAutoComment(duint addr, String & comment)
                 temp_string += ")";
             }
 
-            if(*bp.commandText)
+            if(!bp.commandText.empty())
             {
                 next();
-                if(*bp.commandCondition)
+                if(!bp.commandCondition.empty())
                 {
                     temp_string += GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "cmdif"));
                     temp_string += "(";
@@ -881,12 +881,12 @@ extern "C" DLL_EXPORT duint _dbg_getbranchdestination(duint addr)
     unsigned char data[MAX_DISASM_BUFFER];
     if(!MemIsValidReadPtr(addr, true) || !MemRead(addr, data, sizeof(data)))
         return 0;
-    Zydis cp;
-    if(!cp.Disassemble(addr, data))
+    Zydis zydis;
+    if(!zydis.Disassemble(addr, data))
         return 0;
-    if(cp.IsBranchType(Zydis::BTJmp | Zydis::BTCall | Zydis::BTLoop | Zydis::BTXbegin))
+    if(zydis.IsBranchType(Zydis::BTJmp | Zydis::BTCall | Zydis::BTLoop | Zydis::BTXbegin))
     {
-        auto opValue = cp.ResolveOpValue(0, [](ZydisRegister reg) -> size_t
+        auto opValue = (duint)zydis.ResolveOpValue(0, [](ZydisRegister reg) -> uint64_t
         {
             switch(reg)
             {
@@ -949,10 +949,10 @@ extern "C" DLL_EXPORT duint _dbg_getbranchdestination(duint addr)
                 return 0;
             }
         });
-        if(cp.OpCount() && cp[0].type == ZYDIS_OPERAND_TYPE_MEMORY)
+        if(zydis.OpCount() && zydis[0].type == ZYDIS_OPERAND_TYPE_MEMORY)
         {
             auto const tebseg = ArchValue(ZYDIS_REGISTER_FS, ZYDIS_REGISTER_GS);
-            if(cp[0].mem.segment == tebseg)
+            if(zydis[0].mem.segment == tebseg)
                 opValue += duint(GetTEBLocation(hActiveThread));
             if(MemRead(opValue, &opValue, sizeof(opValue)))
                 return opValue;
@@ -960,7 +960,7 @@ extern "C" DLL_EXPORT duint _dbg_getbranchdestination(duint addr)
         else
             return opValue;
     }
-    if(cp.IsRet())
+    if(zydis.IsRet())
     {
         auto csp = lastContext.csp;
         duint dest = 0;
@@ -1014,7 +1014,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
 
     case DBG_SCRIPT_RUN:
     {
-        scriptrun((int)(duint)param1);
+        scriptrun((int)(duint)param1, param2 != nullptr);
     }
     break;
 
@@ -1145,7 +1145,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
         bNoWow64SingleStepWorkaround = settingboolget("Engine", "NoWow64SingleStepWorkaround");
         bQueryWorkingSet = settingboolget("Misc", "QueryWorkingSet");
         bForceLoadSymbols = settingboolget("Misc", "ForceLoadSymbols");
-        bPidTidInHex = settingboolget("Gui", "PidTidInHex");
+        bTruncateBreakpointLogs = settingboolget("Engine", "TruncateBreakpointLogs");
         stackupdatesettings();
 
         duint setting;
@@ -1377,7 +1377,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
     {
         BREAKPOINT bp;
         if(BpGet((duint)param1, BPNORMAL, 0, &bp))
-            return !(duint)bp.enabled;
+            return (duint)!bp.enabled;
         return (duint)false;
     }
     break;
@@ -1513,7 +1513,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
 
     case DBG_GET_STRING_AT:
     {
-        return disasmgetstringatwrapper(duint(param1), (char*)param2);
+        return disasmgetstringatwrapper(duint(param1), (char*)param2, true);
     }
     break;
 
@@ -1577,7 +1577,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
     case DBG_SELCHANGED:
     {
         PLUG_CB_SELCHANGED plugSelChanged;
-        plugSelChanged.hWindow = (int)param1;
+        plugSelChanged.hWindow = (int)(duint)param1;
         plugSelChanged.VA = (duint)param2;
         plugincbcall(CB_SELCHANGED, &plugSelChanged);
     }
@@ -1609,7 +1609,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
 
     case DBG_GET_PEB_ADDRESS:
     {
-        auto ProcessId = DWORD(param1);
+        auto ProcessId = (DWORD)(duint)param1;
         if(ProcessId == fdProcessInfo->dwProcessId)
             return (duint)GetPEBLocation(fdProcessInfo->hProcess);
         auto hProcess = TitanOpenProcess(PROCESS_QUERY_INFORMATION, false, ProcessId);
@@ -1625,7 +1625,7 @@ extern "C" DLL_EXPORT duint _dbg_sendmessage(DBGMSG type, void* param1, void* pa
 
     case DBG_GET_TEB_ADDRESS:
     {
-        auto ThreadId = DWORD(param1);
+        auto ThreadId = (DWORD)(duint)param1;
         auto tebAddress = ThreadGetLocalBase(ThreadId);
         if(tebAddress)
             return tebAddress;

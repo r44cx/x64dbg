@@ -6,11 +6,12 @@
 #include "QCompleter"
 #include "SymbolAutoCompleteModel.h"
 
-GotoDialog::GotoDialog(QWidget* parent, bool allowInvalidExpression, bool allowInvalidAddress)
+GotoDialog::GotoDialog(QWidget* parent, bool allowInvalidExpression, bool allowInvalidAddress, bool allowNotDebugging)
     : QDialog(parent),
       ui(new Ui::GotoDialog),
       allowInvalidExpression(allowInvalidExpression),
-      allowInvalidAddress(allowInvalidAddress || allowInvalidExpression)
+      allowInvalidAddress(allowInvalidAddress || allowInvalidExpression),
+      allowNotDebugging(allowNotDebugging)
 {
     //setup UI first
     ui->setupUi(this);
@@ -18,7 +19,7 @@ GotoDialog::GotoDialog(QWidget* parent, bool allowInvalidExpression, bool allowI
     setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::MSWindowsFixedSizeDialogHint);
 
     //initialize stuff
-    if(!DbgIsDebugging()) //not debugging
+    if(!allowNotDebugging && !DbgIsDebugging()) //not debugging
         ui->labelError->setText(tr("<font color='red'><b>Not debugging...</b></font>"));
     else
         ui->labelError->setText(tr("<font color='red'><b>Invalid expression...</b></font>"));
@@ -45,14 +46,16 @@ GotoDialog::GotoDialog(QWidget* parent, bool allowInvalidExpression, bool allowI
     connect(this, SIGNAL(finished(int)), this, SLOT(finishedSlot(int)));
     connect(Config(), SIGNAL(disableAutoCompleteUpdated()), this, SLOT(disableAutoCompleteUpdated()));
 
-    Config()->setupWindowPos(this);
+    auto prevSize = size();
+    Config()->loadWindowGeometry(this);
+    this->resize(prevSize);
 }
 
 GotoDialog::~GotoDialog()
 {
     mValidateThread->stop();
     mValidateThread->wait();
-    Config()->saveWindowPos(this);
+    Config()->saveWindowGeometry(this);
     delete ui;
 }
 
@@ -60,6 +63,9 @@ void GotoDialog::showEvent(QShowEvent* event)
 {
     Q_UNUSED(event);
     mValidateThread->start();
+
+    // Fix the label width
+    ui->labelError->setMaximumWidth(ui->labelError->width());
 }
 
 void GotoDialog::hideEvent(QHideEvent* event)
@@ -105,7 +111,7 @@ void GotoDialog::expressionChanged(bool validExpression, bool validPointer, dsin
     }
     if(expressionText == expression)
         return;
-    if(!DbgIsDebugging()) //not debugging
+    if(!allowNotDebugging && !DbgIsDebugging()) //not debugging
     {
         ui->labelError->setText(tr("<font color='red'><b>Not debugging...</b></font>"));
         setOkEnabled(false);
@@ -166,7 +172,9 @@ void GotoDialog::expressionChanged(bool validExpression, bool validPointer, dsin
                 addrText = QString(module) + "." + ToPtrString(addr);
             else
                 addrText = ToPtrString(addr);
-            ui->labelError->setText(tr("<font color='#00DD00'><b>Correct expression! -&gt; </b></font>") + addrText);
+
+            ui->labelError->setToolTip(QString("<qt>%1</qt>").arg(addrText.toHtmlEscaped()));
+            ui->labelError->setText(tr("<font color='#00DD00'><b>Correct expression! -&gt; </b></font>") + addrText.toHtmlEscaped());
             setOkEnabled(true);
             expressionText = expression;
         }

@@ -1,14 +1,14 @@
 #ifndef _BRIDGEMAIN_H_
 #define _BRIDGEMAIN_H_
 
-#include <windows.h>
+#include <Windows.h>
 
 #ifndef __cplusplus
 #include <stdbool.h>
 #define DEFAULT_PARAM(name, value) name
 #else
 #define DEFAULT_PARAM(name, value) name = value
-#endif
+#endif // __cplusplus
 
 //default structure alignments forced
 #ifdef _WIN64
@@ -36,7 +36,7 @@ typedef signed long dsint;
 #ifdef __cplusplus
 extern "C"
 {
-#endif
+#endif // __cplusplus
 
 //Bridge defines
 #define MAX_SETTING_SIZE 65536
@@ -147,7 +147,7 @@ BRIDGE_IMPEXP const wchar_t* BridgeUserDirectory();
 
 #ifdef __cplusplus
 }
-#endif
+#endif // __cplusplus
 
 //list structure (and C++ wrapper)
 #include "bridgelist.h"
@@ -157,7 +157,7 @@ BRIDGE_IMPEXP const wchar_t* BridgeUserDirectory();
 #ifdef __cplusplus
 extern "C"
 {
-#endif
+#endif // __cplusplus
 
 //Debugger defines
 #define MAX_LABEL_SIZE 256
@@ -176,7 +176,10 @@ extern "C"
 #define MAX_SECTION_SIZE 10
 #define MAX_COMMAND_LINE_SIZE 256
 #define MAX_MNEMONIC_SIZE 64
+
+#ifndef PAGE_SIZE
 #define PAGE_SIZE 0x1000
+#endif // PAGE_SIZE
 
 //Debugger enums
 typedef enum
@@ -1149,6 +1152,7 @@ typedef enum
     GUI_GRAPH,
     GUI_MEMMAP,
     GUI_SYMMOD,
+    GUI_THREADS,
 } GUISELECTIONTYPE;
 
 #define GUI_MAX_LINE_SIZE 65536
@@ -1274,6 +1278,11 @@ typedef enum
     GUI_GET_MAIN_THREAD_ID,         // param1=unused,               param2=unused
     GUI_ADD_MSG_TO_LOG_HTML,        // param1=(const char*)msg,     param2=unused
     GUI_IS_LOG_ENABLED,             // param1=unused,               param2=unused
+    GUI_IS_DEBUGGER_FOCUSED_UNUSED,        // This message is removed, could be used for future purposes
+    GUI_SAVE_LOG,                   // param1=const char* file name,param2=unused
+    GUI_REDIRECT_LOG,               // param1=const char* file name,param2=unused
+    GUI_STOP_REDIRECT_LOG,          // param1=unused,               param2=unused
+    GUI_SHOW_THREADS,               // param1=unused,               param2=unused
 } GUIMSG;
 
 //GUI Typedefs
@@ -1343,6 +1352,9 @@ BRIDGE_IMPEXP void GuiSetDebugStateFast(DBGSTATE state);
 BRIDGE_IMPEXP void GuiAddLogMessage(const char* msg);
 BRIDGE_IMPEXP void GuiAddLogMessageHtml(const char* msg);
 BRIDGE_IMPEXP void GuiLogClear();
+BRIDGE_IMPEXP void GuiLogSave(const char* filename);
+BRIDGE_IMPEXP void GuiLogRedirect(const char* filename);
+BRIDGE_IMPEXP void GuiLogRedirectStop();
 BRIDGE_IMPEXP void GuiUpdateAllViews();
 BRIDGE_IMPEXP void GuiUpdateRegisterView();
 BRIDGE_IMPEXP void GuiUpdateDisassemblyView();
@@ -1413,6 +1425,7 @@ BRIDGE_IMPEXP void GuiMenuSetName(int hMenu, const char* name);
 BRIDGE_IMPEXP void GuiMenuSetEntryName(int hEntry, const char* name);
 BRIDGE_IMPEXP void GuiMenuSetEntryHotkey(int hEntry, const char* hack);
 BRIDGE_IMPEXP void GuiShowCpu();
+BRIDGE_IMPEXP void GuiShowThreads();
 BRIDGE_IMPEXP void GuiAddQWidgetTab(void* qWidget);
 BRIDGE_IMPEXP void GuiShowQWidgetTab(void* qWidget);
 BRIDGE_IMPEXP void GuiCloseQWidgetTab(void* qWidget);
@@ -1464,7 +1477,7 @@ BRIDGE_IMPEXP DWORD GuiGetMainThreadId();
 
 #ifdef __cplusplus
 }
-#endif
+#endif // __cplusplus
 
 // Some useful C++ wrapper classes
 #ifdef __cplusplus

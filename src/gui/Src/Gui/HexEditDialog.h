@@ -13,15 +13,17 @@ class HexEditDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit HexEditDialog(QWidget* parent = 0);
+    explicit HexEditDialog(QWidget* parent = nullptr);
     ~HexEditDialog();
 
     void showEntireBlock(bool show, bool checked = false);
     void showKeepSize(bool show);
+    void showStartFromSelection(bool show, bool checked = false);
     void isDataCopiable(bool copyDataEnabled);
     void updateCodepage();
 
     bool entireBlock();
+    bool startFromSelection();
 
     QHexEdit* mHexEdit;
 

@@ -78,6 +78,9 @@ static const wchar_t* InitializeUserDirectory()
 
     *backslash = L'\0';
 
+    // Set the current directory to the application directory
+    SetCurrentDirectoryW(szUserDirectory);
+
     // Extract the file name of the x64dbg executable (without extension)
     auto fileNameWithoutExtension = backslash + 1;
     auto period = wcschr(fileNameWithoutExtension, L'.');
@@ -1246,7 +1249,7 @@ BRIDGE_IMPEXP void DbgDelEncodeTypeSegment(duint start)
 
 BRIDGE_IMPEXP void DbgSelChanged(int hWindow, duint VA)
 {
-    _dbg_sendmessage(DBG_SELCHANGED, (void*)hWindow, (void*)VA);
+    _dbg_sendmessage(DBG_SELCHANGED, (void*)(duint)hWindow, (void*)VA);
 }
 
 BRIDGE_IMPEXP HANDLE DbgGetProcessHandle()
@@ -1271,12 +1274,12 @@ BRIDGE_IMPEXP DWORD DbgGetThreadId()
 
 BRIDGE_IMPEXP duint DbgGetPebAddress(DWORD ProcessId)
 {
-    return (duint)_dbg_sendmessage(DBG_GET_PEB_ADDRESS, (void*)ProcessId, nullptr);
+    return (duint)_dbg_sendmessage(DBG_GET_PEB_ADDRESS, (void*)(duint)ProcessId, nullptr);
 }
 
 BRIDGE_IMPEXP duint DbgGetTebAddress(DWORD ThreadId)
 {
-    return (duint)_dbg_sendmessage(DBG_GET_TEB_ADDRESS, (void*)ThreadId, nullptr);
+    return (duint)_dbg_sendmessage(DBG_GET_TEB_ADDRESS, (void*)(duint)ThreadId, nullptr);
 }
 
 BRIDGE_IMPEXP bool DbgAnalyzeFunction(duint entry, BridgeCFGraphList* graph)
@@ -1359,6 +1362,21 @@ BRIDGE_IMPEXP void GuiAddLogMessageHtml(const char* msg)
 BRIDGE_IMPEXP void GuiLogClear()
 {
     _gui_sendmessage(GUI_CLEAR_LOG, 0, 0);
+}
+
+BRIDGE_IMPEXP void GuiLogSave(const char* filename)
+{
+    _gui_sendmessage(GUI_SAVE_LOG, (void*)filename, 0);
+}
+
+BRIDGE_IMPEXP void GuiLogRedirect(const char* filename)
+{
+    _gui_sendmessage(GUI_REDIRECT_LOG, (void*)filename, 0);
+}
+
+BRIDGE_IMPEXP void GuiLogRedirectStop()
+{
+    _gui_sendmessage(GUI_STOP_REDIRECT_LOG, 0, 0);
 }
 
 BRIDGE_IMPEXP void GuiUpdateEnable(bool updateNow)
@@ -1520,7 +1538,7 @@ BRIDGE_IMPEXP int GuiReferenceGetRowCount()
 
 BRIDGE_IMPEXP int GuiReferenceSearchGetRowCount()
 {
-    return int(_gui_sendmessage(GUI_REF_SEARCH_GETROWCOUNT, 0, 0));
+    return (int)(duint)_gui_sendmessage(GUI_REF_SEARCH_GETROWCOUNT, 0, 0);
 }
 
 BRIDGE_IMPEXP void GuiReferenceDeleteAllColumns()
@@ -1549,7 +1567,7 @@ BRIDGE_IMPEXP char* GuiReferenceGetCellContent(int row, int col)
 
 BRIDGE_IMPEXP char* GuiReferenceSearchGetCellContent(int row, int col)
 {
-    return (char*)_gui_sendmessage(GUI_REF_SEARCH_GETCELLCONTENT, (void*)row, (void*)col);
+    return (char*)_gui_sendmessage(GUI_REF_SEARCH_GETCELLCONTENT, (void*)(duint)row, (void*)(duint)col);
 }
 
 BRIDGE_IMPEXP void GuiReferenceReloadData()
@@ -1723,42 +1741,48 @@ BRIDGE_IMPEXP void GuiLoadSourceFileEx(const char* path, duint addr)
 
 BRIDGE_IMPEXP void GuiMenuSetIcon(int hMenu, const ICONDATA* icon)
 {
-    _gui_sendmessage(GUI_MENU_SET_ICON, (void*)hMenu, (void*)icon);
+    _gui_sendmessage(GUI_MENU_SET_ICON, (void*)(duint)hMenu, (void*)icon);
 }
 
 BRIDGE_IMPEXP void GuiMenuSetEntryIcon(int hEntry, const ICONDATA* icon)
 {
-    _gui_sendmessage(GUI_MENU_SET_ENTRY_ICON, (void*)hEntry, (void*)icon);
+    _gui_sendmessage(GUI_MENU_SET_ENTRY_ICON, (void*)(duint)hEntry, (void*)icon);
 }
 
 BRIDGE_IMPEXP void GuiMenuSetEntryChecked(int hEntry, bool checked)
 {
-    _gui_sendmessage(GUI_MENU_SET_ENTRY_CHECKED, (void*)hEntry, (void*)checked);
+    _gui_sendmessage(GUI_MENU_SET_ENTRY_CHECKED, (void*)(duint)hEntry, (void*)(duint)checked);
 }
 
 BRIDGE_IMPEXP void GuiMenuSetVisible(int hMenu, bool visible)
 {
-    _gui_sendmessage(GUI_MENU_SET_VISIBLE, (void*)hMenu, (void*)visible);
+    _gui_sendmessage(GUI_MENU_SET_VISIBLE, (void*)(duint)hMenu, (void*)(duint)visible);
 }
 
 BRIDGE_IMPEXP void GuiMenuSetEntryVisible(int hEntry, bool visible)
 {
-    _gui_sendmessage(GUI_MENU_SET_ENTRY_VISIBLE, (void*)hEntry, (void*)visible);
+    _gui_sendmessage(GUI_MENU_SET_ENTRY_VISIBLE, (void*)(duint)hEntry, (void*)(duint)visible);
 }
 
 BRIDGE_IMPEXP void GuiMenuSetName(int hMenu, const char* name)
 {
-    _gui_sendmessage(GUI_MENU_SET_NAME, (void*)hMenu, (void*)name);
+    _gui_sendmessage(GUI_MENU_SET_NAME, (void*)(duint)hMenu, (void*)name);
 }
 
 BRIDGE_IMPEXP void GuiMenuSetEntryName(int hEntry, const char* name)
 {
-    _gui_sendmessage(GUI_MENU_SET_ENTRY_NAME, (void*)hEntry, (void*)name);
+    _gui_sendmessage(GUI_MENU_SET_ENTRY_NAME, (void*)(duint)hEntry, (void*)name);
 }
 
 BRIDGE_IMPEXP void GuiMenuSetEntryHotkey(int hEntry, const char* hack)
 {
-    _gui_sendmessage(GUI_MENU_SET_ENTRY_HOTKEY, (void*)hEntry, (void*)hack);
+    _gui_sendmessage(GUI_MENU_SET_ENTRY_HOTKEY, (void*)(duint)hEntry, (void*)hack);
+}
+
+
+BRIDGE_IMPEXP void GuiShowThreads()
+{
+    _gui_sendmessage(GUI_SHOW_THREADS, 0, 0);
 }
 
 BRIDGE_IMPEXP void GuiShowCpu()
@@ -1816,7 +1840,7 @@ BRIDGE_IMPEXP void GuiGetDebuggeeNotes(char** text)
 
 BRIDGE_IMPEXP void GuiDumpAtN(duint va, int index)
 {
-    _gui_sendmessage(GUI_DUMP_AT_N, (void*)va, (void*)index);
+    _gui_sendmessage(GUI_DUMP_AT_N, (void*)va, (void*)(duint)index);
 }
 
 BRIDGE_IMPEXP void GuiDisplayWarning(const char* title, const char* text)
@@ -1831,7 +1855,7 @@ BRIDGE_IMPEXP void GuiRegisterScriptLanguage(SCRIPTTYPEINFO* info)
 
 BRIDGE_IMPEXP void GuiUnregisterScriptLanguage(int id)
 {
-    _gui_sendmessage(GUI_UNREGISTER_SCRIPT_LANG, (void*)id, nullptr);
+    _gui_sendmessage(GUI_UNREGISTER_SCRIPT_LANG, (void*)(duint)id, nullptr);
 }
 
 BRIDGE_IMPEXP void GuiUpdateArgumentWidget()
@@ -1842,7 +1866,7 @@ BRIDGE_IMPEXP void GuiUpdateArgumentWidget()
 
 BRIDGE_IMPEXP void GuiFocusView(int hWindow)
 {
-    _gui_sendmessage(GUI_FOCUS_VIEW, (void*)hWindow, nullptr);
+    _gui_sendmessage(GUI_FOCUS_VIEW, (void*)(duint)hWindow, nullptr);
 }
 
 BRIDGE_IMPEXP bool GuiLoadGraph(BridgeCFGraphList* graph, duint addr)

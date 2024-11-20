@@ -13,7 +13,7 @@ class CPUDisassembly : public Disassembly
     Q_OBJECT
 
 public:
-    CPUDisassembly(QWidget* parent, bool isMain);
+    CPUDisassembly(Architecture* architecture, bool isMain, QWidget* parent = nullptr);
 
     // Mouse management
     void contextMenuEvent(QContextMenuEvent* event);
@@ -22,8 +22,6 @@ public:
 
     // Context menu management
     void setupRightClickContextMenu();
-    void addFollowReferenceMenuItem(QString name, dsint value, QMenu* menu, bool isReferences, bool isFollowInCPU);
-    void setupFollowReferenceMenu(dsint wVA, QMenu* menu, bool isReferences, bool isFollowInCPU);
     void copySelectionSlot(bool copyBytes);
     void copySelectionToFileSlot(bool copyBytes);
     void setSideBar(CPUSideBar* sideBar);
@@ -79,6 +77,7 @@ public slots:
     void copySelectionToFileSlot();
     void copySelectionNoBytesSlot();
     void copySelectionToFileNoBytesSlot();
+    void copySelectionBytesSlot();
     void copyAddressSlot();
     void copyRvaSlot();
     void copyFileOffsetSlot();
@@ -115,6 +114,9 @@ private:
     bool getTokenValueText(QString & text);
 
     void pushSelectionInto(bool copyBytes, QTextStream & stream, QTextStream* htmlStream = nullptr);
+
+    void addFollowReferenceMenuItem(QString name, duint value, QMenu* menu, bool isReferences, bool isFollowInCPU);
+    void setupFollowReferenceMenu(duint va, QMenu* menu, bool isReferences, bool isFollowInCPU);
 
     // Menus
     QMenu* mHwSlotSelectMenu;

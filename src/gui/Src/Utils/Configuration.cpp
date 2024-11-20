@@ -16,13 +16,6 @@ inline void insertMenuBuilderBools(QMap<QString, bool>* config, const char* id, 
         config->insert(QString("Menu%1Hidden%2").arg(id).arg(i), false);
 }
 
-inline static void addWindowPosConfig(QMap<QString, duint> & guiUint, const char* windowName)
-{
-    QString n(windowName);
-    guiUint.insert(n + "X", 0);
-    guiUint.insert(n + "Y", 0);
-}
-
 Configuration::Configuration() : QObject(), noMoreMsgbox(false)
 {
     mPtr = this;
@@ -32,6 +25,7 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     defaultColors.insert("AbstractTableViewBackgroundColor", QColor("#FFF8F0"));
     defaultColors.insert("AbstractTableViewTextColor", QColor("#000000"));
     defaultColors.insert("AbstractTableViewHeaderTextColor", QColor("#000000"));
+    defaultColors.insert("AbstractTableViewHeaderBackgroundColor", QColor("#C0C0C0"));
     defaultColors.insert("AbstractTableViewSelectionColor", QColor("#C0C0C0"));
 
     defaultColors.insert("DisassemblyCipColor", QColor("#FFFFFF"));
@@ -260,7 +254,8 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     disassemblyBool.insert("KeepSize", false);
     disassemblyBool.insert("FillNOPs", false);
     disassemblyBool.insert("Uppercase", false);
-    disassemblyBool.insert("FindCommandEntireBlock", false);
+    disassemblyBool.insert("FindCommandFromSelection", true);
+    disassemblyBool.insert("FindPatternFromSelection", true);
     disassemblyBool.insert("OnlyCipAutoComments", false);
     disassemblyBool.insert("TabbedMnemonic", false);
     disassemblyBool.insert("LongDataInstruction", false);
@@ -269,6 +264,7 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     disassemblyBool.insert("0xPrefixValues", false);
     disassemblyBool.insert("NoBranchDisasmPreview", false);
     disassemblyBool.insert("NoCurrentModuleText", false);
+    disassemblyBool.insert("ShowMnemonicBrief", false);
     defaultBools.insert("Disassembler", disassemblyBool);
 
     QMap<QString, bool> engineBool;
@@ -285,7 +281,6 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     guiBool.insert("FpuRegistersLittleEndian", false);
     guiBool.insert("SaveColumnOrder", true);
     guiBool.insert("NoCloseDialog", false);
-    guiBool.insert("PidTidInHex", false);
     guiBool.insert("SidebarWatchLabels", true);
     guiBool.insert("LoadSaveTabOrder", true);
     guiBool.insert("ShowGraphRva", false);
@@ -297,6 +292,9 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     guiBool.insert("AutoFollowInStack", true);
     guiBool.insert("EnableQtHighDpiScaling", true);
     guiBool.insert("Topmost", false);
+    guiBool.insert("CPUDumpStartFromSelect", true);
+    guiBool.insert("CPUStackStartFromSelect", true);
+    guiBool.insert("AutoTraceDump", false);
     //Named menu settings
     insertMenuBuilderBools(&guiBool, "CPUDisassembly", 50); //CPUDisassembly
     insertMenuBuilderBools(&guiBool, "CPUDump", 50); //CPUDump
@@ -314,10 +312,14 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     //"Favourites" menu cannot be customized for item hiding.
     insertMenuBuilderBools(&guiBool, "Help", 50); //Main Menu : Help
     insertMenuBuilderBools(&guiBool, "View", 50); //Main Menu : View
+    insertMenuBuilderBools(&guiBool, "TraceBrowser", 50); //TraceBrowser
+    insertMenuBuilderBools(&guiBool, "TraceDump", 50); //Trace Dump
+    insertMenuBuilderBools(&guiBool, "TraceStack", 50); //Trace Stack
+    insertMenuBuilderBools(&guiBool, "TraceXrefBrowseDialog", 50); //TraceXrefBrowseDialog
     defaultBools.insert("Gui", guiBool);
 
     QMap<QString, duint> guiUint;
-    AbstractTableView::setupColumnConfigDefaultValue(guiUint, "CPUDisassembly", 4);
+    AbstractTableView::setupColumnConfigDefaultValue(guiUint, "CPUDisassembly", 5);
     AbstractTableView::setupColumnConfigDefaultValue(guiUint, "CPUStack", 3);
     for(int i = 1; i <= 5; i++)
         AbstractTableView::setupColumnConfigDefaultValue(guiUint, QString("CPUDump%1").arg(i), 4);
@@ -339,15 +341,6 @@ Configuration::Configuration() : QObject(), noMoreMsgbox(false)
     AbstractTableView::setupColumnConfigDefaultValue(guiUint, "Trace", 7);
     guiUint.insert("SIMDRegistersDisplayMode", 0);
     guiUint.insert("EditFloatRegisterDefaultMode", 0);
-    addWindowPosConfig(guiUint, "AssembleDialog");
-    addWindowPosConfig(guiUint, "AttachDialog");
-    addWindowPosConfig(guiUint, "GotoDialog");
-    addWindowPosConfig(guiUint, "EditBreakpointDialog");
-    addWindowPosConfig(guiUint, "BrowseDialog");
-    addWindowPosConfig(guiUint, "FavouriteTools");
-    addWindowPosConfig(guiUint, "HexEditDialog");
-    addWindowPosConfig(guiUint, "WordEditDialog");
-    addWindowPosConfig(guiUint, "SystemBreakpointScriptDialog");
     defaultUints.insert("Gui", guiUint);
 
     //uint settings
@@ -1103,18 +1096,48 @@ bool Configuration::shortcutToConfig(const QString & id, const QKeySequence shor
     return BridgeSettingSet("Shortcuts", _id.toUtf8().constData(), _key.toUtf8().constData());
 }
 
-void Configuration::registerMenuBuilder(MenuBuilder* menu, size_t count)
+bool Configuration::registerMenuBuilder(MenuBuilder* menu, size_t count)
 {
     QString id = menu->getId();
     for(const auto & i : NamedMenuBuilders)
-        if(i.type == 0 && i.builder->getId() == id)
-            return; //already exists
+    {
+        if(i.type == 0)
+        {
+            if(i.builder.isNull())
+                continue;
+            if(i.builder->getId() == id)
+                return false; //already exists
+        }
+    }
     NamedMenuBuilders.append(MenuMap(menu, count));
+    return true;
 }
 
-void Configuration::registerMainMenuStringList(QList<QAction*>* menu)
+bool Configuration::registerMainMenuStringList(QList<QAction*>* menu)
 {
     NamedMenuBuilders.append(MenuMap(menu, menu->size() - 1));
+    return true;
+}
+
+void Configuration::unregisterMenuBuilder(MenuBuilder* menu)
+{
+    QString id = menu->getId();
+    for(auto i = NamedMenuBuilders.begin(); i != NamedMenuBuilders.end(); ++i)
+    {
+        if(i->type == 0)
+        {
+            if(i->builder.isNull())
+            {
+                NamedMenuBuilders.erase(i);
+                continue;
+            }
+            if(i->builder->getId() == id)
+            {
+                NamedMenuBuilders.erase(i);
+                return;
+            }
+        }
+    }
 }
 
 void Configuration::zoomFont(const QString & fontName, QWheelEvent* event)
@@ -1150,24 +1173,27 @@ static bool IsPointVisible(QPoint pos)
 }
 
 /**
- * @brief Configuration::setupWindowPos Moves the dialog to the saved position
+ * @brief Configuration::setupWindowPos Loads the position/size of a dialog.
  * @param window this
  */
-void Configuration::setupWindowPos(QWidget* window)
+void Configuration::loadWindowGeometry(QWidget* window)
 {
-    QPoint pos;
-    pos.setX(getUint("Gui", QString(window->metaObject()->className()) + "X"));
-    pos.setY(getUint("Gui", QString(window->metaObject()->className()) + "Y"));
-    if(pos.x() != 0 && pos.y() != 0 && IsPointVisible(pos))
-        window->move(pos);
+    QString name = window->metaObject()->className();
+    char setting[MAX_SETTING_SIZE] = "";
+    if(!BridgeSettingGet("Gui", (name + "Geometry").toUtf8().constData(), setting))
+        return;
+    auto oldPos = window->pos();
+    window->restoreGeometry(QByteArray::fromBase64(QByteArray(setting)));
+    if(!IsPointVisible(window->pos()))
+        window->move(oldPos);
 }
 
 /**
- * @brief Configuration::saveWindowPos Saves the position of a dialog.
+ * @brief Configuration::saveWindowPos Saves the position/size of a dialog.
  * @param window this
  */
-void Configuration::saveWindowPos(QWidget* window)
+void Configuration::saveWindowGeometry(QWidget* window)
 {
-    setUint("Gui",  QString(window->metaObject()->className()) + "X", window->pos().x());
-    setUint("Gui",  QString(window->metaObject()->className()) + "Y", window->pos().y());
+    QString name = window->metaObject()->className();
+    BridgeSettingSet("Gui", (name + "Geometry").toUtf8().constData(), window->saveGeometry().toBase64().data());
 }

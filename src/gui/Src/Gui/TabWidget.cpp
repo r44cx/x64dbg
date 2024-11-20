@@ -58,11 +58,12 @@ QList<QWidget*> MHTabWidget::windows()
     return mWindows;
 }
 
-// Add a tab
+// Add a tab with icon
 int MHTabWidget::addTabEx(QWidget* widget, const QIcon & icon, const QString & label, const QString & nativeName)
 {
     mNativeNames.append(nativeName);
     mHistory.push_back((MIDPKey)widget);
+    widget->setAccessibleName(label);
     return this->addTab(widget, icon, label);
 }
 
@@ -94,6 +95,9 @@ void MHTabWidget::AttachTab(QWidget* parent)
     // Move the tab back to the previous index
     if(detachedWidget->mPreviousIndex >= 0)
         mTabBar->moveTab(newIndex, detachedWidget->mPreviousIndex);
+
+    //Free MHDetachedWindow
+    delete detachedWidget;
 }
 
 // Convert a tab to an external window
@@ -144,7 +148,15 @@ void MHTabWidget::DetachTab(int index, const QPoint & dropPoint)
 void MHTabWidget::DeleteTab(int index)
 {
     QWidget* w = widget(index);
+    if(index >= QTabWidget::count())
+    {
+        // The tab is detached, so need to re-attach, transfer the widget back to tab widget from detached window
+        MHDetachedWindow* window = dynamic_cast<MHDetachedWindow*>(widget(index)->parent());
+        index = window->mPreviousIndex;
+        AttachTab(window);
+    }
     mHistory.removeAll((MIDPKey)w);
+    // Delete tab
     removeTab(index);
     mNativeNames.removeAt(index);
 }

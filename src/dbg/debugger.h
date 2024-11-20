@@ -28,9 +28,9 @@ enum class ExceptionHandledBy
 struct INIT_STRUCT
 {
     HANDLE event = nullptr;
-    char* exe = nullptr;
-    char* commandline = nullptr;
-    char* currentfolder = nullptr;
+    std::string exe;
+    std::string commandline;
+    std::string currentfolder;
     DWORD pid = 0;
     bool attach = false;
 };
@@ -157,7 +157,6 @@ extern bool bVerboseExceptionLogging;
 extern bool bNoWow64SingleStepWorkaround;
 extern bool bForceLoadSymbols;
 extern bool bNewStringAlgorithm;
-extern bool bPidTidInHex;
 extern bool bWindowLongPath;
 extern duint maxSkipExceptionCount;
 extern HANDLE mProcHandle;

@@ -26,7 +26,9 @@ HexEditDialog::HexEditDialog(QWidget* parent) : QDialog(parent), ui(new Ui::HexE
     ui->lineEditAscii->setEncoding(QTextCodec::codecForName("System"));
     ui->lineEditUnicode->setEncoding(QTextCodec::codecForName("UTF-16"));
     ui->chkKeepSize->setChecked(ConfigBool("HexDump", "KeepSize"));
+    ui->chkKeepSize->hide();
     ui->chkEntireBlock->hide();
+    ui->chkFromSelection->hide();
 
     mDataInitialized = false;
     stringEditorLock = false;
@@ -91,12 +93,12 @@ HexEditDialog::HexEditDialog(QWidget* parent) : QDialog(parent), ui(new Ui::HexE
     QModelIndex index = ui->listType->model()->index(lastDataType, 0);
     ui->listType->setCurrentIndex(index);
 
-    Config()->setupWindowPos(this);
+    Config()->loadWindowGeometry(this);
 }
 
 HexEditDialog::~HexEditDialog()
 {
-    Config()->saveWindowPos(this);
+    Config()->saveWindowGeometry(this);
     delete ui;
 }
 
@@ -109,6 +111,12 @@ void HexEditDialog::showEntireBlock(bool show, bool checked)
 void HexEditDialog::showKeepSize(bool show)
 {
     ui->chkKeepSize->setVisible(show);
+}
+
+void HexEditDialog::showStartFromSelection(bool show, bool checked)
+{
+    ui->chkFromSelection->setVisible(show);
+    ui->chkFromSelection->setChecked(checked);
 }
 
 void HexEditDialog::isDataCopiable(bool copyDataEnabled)
@@ -147,6 +155,11 @@ void HexEditDialog::updateCodepage(const QByteArray & name)
 bool HexEditDialog::entireBlock()
 {
     return ui->chkEntireBlock->isChecked();
+}
+
+bool HexEditDialog::startFromSelection()
+{
+    return ui->chkFromSelection->isChecked();
 }
 
 void HexEditDialog::updateStyle()
@@ -745,7 +758,7 @@ void HexEditDialog::printData(DataType type)
     {
         INETNTOPW InetNtopW;
         int numIPs = mData.size() / 16;
-        HMODULE hWinsock = LoadLibrary(L"ws2_32.dll");
+        HMODULE hWinsock = LoadLibraryW(L"ws2_32.dll");
         InetNtopW = INETNTOPW(GetProcAddress(hWinsock, "InetNtopW"));
         if(InetNtopW)
         {

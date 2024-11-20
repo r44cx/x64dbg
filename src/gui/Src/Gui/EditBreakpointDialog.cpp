@@ -3,44 +3,49 @@
 #include "StringUtil.h"
 #include "MiscUtil.h"
 #include "Configuration.h"
+#include "BrowseDialog.h"
 
-EditBreakpointDialog::EditBreakpointDialog(QWidget* parent, const BRIDGEBP & bp)
+EditBreakpointDialog::EditBreakpointDialog(QWidget* parent, const Breakpoints::Data & bp)
     : QDialog(parent),
       ui(new Ui::EditBreakpointDialog),
       mBp(bp)
 {
     ui->setupUi(this);
-    setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint | Qt::MSWindowsFixedSizeDialogHint);
+    setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+    setFixedHeight(sizeHint().height()); // resizable only horizontally
+
     switch(bp.type)
     {
     case bp_dll:
-        setWindowTitle(tr("Edit DLL Breakpoint %1").arg(QString(bp.mod)));
+        setWindowTitle(tr("Edit DLL Breakpoint %1").arg(mBp.module));
         break;
     case bp_normal:
-        setWindowTitle(tr("Edit Breakpoint %1").arg(getSymbolicName(bp.addr)));
+        setWindowTitle(tr("Edit Breakpoint %1").arg(getSymbolicName(mBp.addr)));
         break;
     case bp_hardware:
-        setWindowTitle(tr("Edit Hardware Breakpoint %1").arg(getSymbolicName(bp.addr)));
+        setWindowTitle(tr("Edit Hardware Breakpoint %1").arg(getSymbolicName(mBp.addr)));
         break;
     case bp_memory:
-        setWindowTitle(tr("Edit Memory Breakpoint %1").arg(getSymbolicName(bp.addr)));
+        setWindowTitle(tr("Edit Memory Breakpoint %1").arg(getSymbolicName(mBp.addr)));
         break;
     case bp_exception:
-        setWindowTitle(tr("Edit Exception Breakpoint %1").arg(getSymbolicName(bp.addr)));
+        setWindowTitle(tr("Edit Exception Breakpoint %1").arg(getSymbolicName(mBp.addr)));
         break;
     default:
-        setWindowTitle(tr("Edit Breakpoint %1").arg(getSymbolicName(bp.addr)));
+        setWindowTitle(tr("Edit Breakpoint %1").arg(getSymbolicName(mBp.addr)));
         break;
     }
     setWindowIcon(DIcon("breakpoint"));
     loadFromBp();
 
-    Config()->setupWindowPos(this);
+    connect(this, SIGNAL(accepted()), this, SLOT(acceptedSlot()));
+
+    Config()->loadWindowGeometry(this);
 }
 
 EditBreakpointDialog::~EditBreakpointDialog()
 {
-    Config()->saveWindowPos(this);
+    Config()->saveWindowGeometry(this);
     delete ui;
 }
 
@@ -56,63 +61,45 @@ void EditBreakpointDialog::loadFromBp()
     ui->editLogCondition->setText(mBp.logCondition);
     ui->editCommandText->setText(mBp.commandText);
     ui->editCommandCondition->setText(mBp.commandCondition);
-}
-
-template<typename T>
-void copyTruncate(T & dest, QString src)
-{
-    src.replace(QChar('\\'), QString("\\\\"));
-    src.replace(QChar('"'), QString("\\\""));
-    strncpy_s(dest, src.toUtf8().constData(), _TRUNCATE);
-}
-
-void EditBreakpointDialog::on_editName_textEdited(const QString & arg1)
-{
-    copyTruncate(mBp.name, arg1);
-}
-
-void EditBreakpointDialog::on_editBreakCondition_textEdited(const QString & arg1)
-{
-    copyTruncate(mBp.breakCondition, arg1);
+    mLogFile = mBp.logFile;
+    ui->buttonLogFile->setToolTip(mLogFile);
 }
 
 void EditBreakpointDialog::on_editLogText_textEdited(const QString & arg1)
 {
+    Q_UNUSED(arg1);
     ui->checkBoxSilent->setChecked(true);
-    copyTruncate(mBp.logText, arg1);
 }
 
-void EditBreakpointDialog::on_editLogCondition_textEdited(const QString & arg1)
+void EditBreakpointDialog::on_buttonLogFile_clicked()
 {
-    copyTruncate(mBp.logCondition, arg1);
+    BrowseDialog browse(
+        this,
+        tr("Breakpoint log file"),
+        tr("Enter the path to the log file."),
+        tr("Log Files (*.txt *.log);;All Files (*.*)"),
+        mLogFile.isEmpty() ? getDbPath(mainModuleName() + ".log", false) : mLogFile,
+        true
+    );
+    browse.setConfirmOverwrite(false);
+    if(browse.exec() == QDialog::Accepted)
+        mLogFile = browse.path;
+    else
+        mLogFile.clear();
+    ui->buttonLogFile->setToolTip(mLogFile);
 }
 
-void EditBreakpointDialog::on_editCommandText_textEdited(const QString & arg1)
+void EditBreakpointDialog::acceptedSlot()
 {
-    copyTruncate(mBp.commandText, arg1);
-}
-
-void EditBreakpointDialog::on_editCommandCondition_textEdited(const QString & arg1)
-{
-    copyTruncate(mBp.commandCondition, arg1);
-}
-
-void EditBreakpointDialog::on_checkBoxFastResume_toggled(bool checked)
-{
-    mBp.fastResume = checked;
-}
-
-void EditBreakpointDialog::on_spinHitCount_valueChanged(int arg1)
-{
-    mBp.hitCount = arg1;
-}
-
-void EditBreakpointDialog::on_checkBoxSilent_toggled(bool checked)
-{
-    mBp.silent = checked;
-}
-
-void EditBreakpointDialog::on_checkBoxSingleshoot_toggled(bool checked)
-{
-    mBp.singleshoot = checked;
+    mBp.breakCondition = ui->editBreakCondition->text();
+    mBp.logText = ui->editLogText->text();
+    mBp.logCondition = ui->editLogCondition->text();
+    mBp.commandText = ui->editCommandText->text();
+    mBp.commandCondition = ui->editCommandCondition->text();
+    mBp.name = ui->editName->text();
+    mBp.hitCount = ui->spinHitCount->value();
+    mBp.singleshoot = ui->checkBoxSingleshoot->isChecked();
+    mBp.silent = ui->checkBoxSilent->isChecked();
+    mBp.fastResume = ui->checkBoxFastResume->isChecked();
+    mBp.logFile = mLogFile;
 }

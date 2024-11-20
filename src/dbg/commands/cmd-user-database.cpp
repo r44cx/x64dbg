@@ -79,8 +79,8 @@ bool cbInstrCommentList(int argc, char* argv[])
     //setup reference view
     GuiReferenceInitialize(GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Comments")));
     GuiReferenceAddColumn(2 * sizeof(duint), GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Address")));
-    GuiReferenceAddColumn(64, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Disassembly")));
-    GuiReferenceAddColumn(10, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Comment")));
+    GuiReferenceAddColumn(50, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Disassembly")));
+    GuiReferenceAddColumn(0, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Comment")));
     GuiReferenceSetRowCount(0);
     GuiReferenceReloadData();
     size_t cbsize;
@@ -99,7 +99,7 @@ bool cbInstrCommentList(int argc, char* argv[])
             continue;
         GuiReferenceSetRowCount(total + 1);
         char addrText[20] = "";
-        sprintf_s(addrText, "%p", comments()[i].addr);
+        sprintf_s(addrText, "%p", (void*)comments()[i].addr);
         GuiReferenceSetCellContent(total, 0, addrText);
         char disassembly[GUI_MAX_DISASSEMBLY_SIZE] = "";
         if(GuiGetDisassembly(comments()[i].addr, disassembly))
@@ -159,7 +159,7 @@ bool cbInstrLabelList(int argc, char* argv[])
     //setup reference view
     GuiReferenceInitialize(GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Labels")));
     GuiReferenceAddColumn(2 * sizeof(duint), GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Address")));
-    GuiReferenceAddColumn(100, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Disassembly")));
+    GuiReferenceAddColumn(50, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Disassembly")));
     GuiReferenceAddColumn(0, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Label")));
     GuiReferenceSetRowCount(0);
     GuiReferenceReloadData();
@@ -176,7 +176,7 @@ bool cbInstrLabelList(int argc, char* argv[])
         labels[i].addr += ModBaseFromName(labels[i].mod().c_str());
         GuiReferenceSetRowCount(i + 1);
         char addrText[20] = "";
-        sprintf_s(addrText, "%p", labels[i].addr);
+        sprintf_s(addrText, "%p", (void*)labels[i].addr);
         GuiReferenceSetCellContent(i, 0, addrText);
         char disassembly[GUI_MAX_DISASSEMBLY_SIZE] = "";
         if(GuiGetDisassembly(labels[i].addr, disassembly))
@@ -254,7 +254,7 @@ bool cbInstrBookmarkList(int argc, char* argv[])
     {
         GuiReferenceSetRowCount(i + 1);
         char addrText[20] = "";
-        sprintf_s(addrText, "%p", bookmarks()[i].addr);
+        sprintf_s(addrText, "%p", (void*)bookmarks()[i].addr);
         GuiReferenceSetCellContent(i, 0, addrText);
         char disassembly[GUI_MAX_DISASSEMBLY_SIZE] = "";
         if(GuiGetDisassembly(bookmarks()[i].addr, disassembly))
@@ -275,7 +275,7 @@ bool cbInstrBookmarkList(int argc, char* argv[])
 
 bool cbInstrBookmarkClear(int argc, char* argv[])
 {
-    LabelClear();
+    BookmarkClear();
     GuiUpdateAllViews();
     dputs(QT_TRANSLATE_NOOP("DBG", "All bookmarks deleted!"));
     return true;
@@ -342,9 +342,9 @@ bool cbInstrFunctionList(int argc, char* argv[])
     {
         GuiReferenceSetRowCount(i + 1);
         char addrText[20] = "";
-        sprintf_s(addrText, "%p", functions()[i].start);
+        sprintf_s(addrText, "%p", (void*)functions()[i].start);
         GuiReferenceSetCellContent(i, 0, addrText);
-        sprintf_s(addrText, "%p", functions()[i].end);
+        sprintf_s(addrText, "%p", (void*)functions()[i].end);
         GuiReferenceSetCellContent(i, 1, addrText);
         sprintf_s(addrText, ArchValue("%X", "%llX"), functions()[i].end - functions()[i].start);
         GuiReferenceSetCellContent(i, 2, addrText);
@@ -416,8 +416,8 @@ bool cbInstrArgumentList(int argc, char* argv[])
     GuiReferenceInitialize(GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Arguments")));
     GuiReferenceAddColumn(2 * sizeof(duint), GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Start")));
     GuiReferenceAddColumn(2 * sizeof(duint), GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "End")));
-    GuiReferenceAddColumn(100, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Disassembly (Start)")));
-    GuiReferenceAddColumn(10, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Label/Comment")));
+    GuiReferenceAddColumn(50, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Disassembly (Start)")));
+    GuiReferenceAddColumn(0, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Label/Comment")));
     GuiReferenceSetRowCount(0);
     GuiReferenceReloadData();
     size_t cbsize;
@@ -434,9 +434,9 @@ bool cbInstrArgumentList(int argc, char* argv[])
     {
         GuiReferenceSetRowCount(i + 1);
         char addrText[20] = "";
-        sprintf_s(addrText, "%p", arguments()[i].start);
+        sprintf_s(addrText, "%p", (void*)arguments()[i].start);
         GuiReferenceSetCellContent(i, 0, addrText);
-        sprintf_s(addrText, "%p", arguments()[i].end);
+        sprintf_s(addrText, "%p", (void*)arguments()[i].end);
         GuiReferenceSetCellContent(i, 1, addrText);
         char disassembly[GUI_MAX_DISASSEMBLY_SIZE] = "";
         if(GuiGetDisassembly(arguments()[i].start, disassembly))
@@ -512,7 +512,7 @@ bool cbInstrLoopList(int argc, char* argv[])
     GuiReferenceAddColumn(2 * sizeof(duint), GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "End")));
     GuiReferenceAddColumn(2 * sizeof(duint), GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Depth")));
     GuiReferenceAddColumn(2 * sizeof(duint), GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Parent")));
-    GuiReferenceAddColumn(100, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Disassembly (Start)")));
+    GuiReferenceAddColumn(50, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Disassembly (Start)")));
     GuiReferenceAddColumn(0, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Label/Comment")));
     GuiReferenceSetRowCount(0);
     GuiReferenceReloadData();
@@ -530,13 +530,13 @@ bool cbInstrLoopList(int argc, char* argv[])
     {
         GuiReferenceSetRowCount(i + 1);
         char addrText[20] = "";
-        sprintf_s(addrText, "%p", loops()[i].start);
+        sprintf_s(addrText, "%p", (void*)loops()[i].start);
         GuiReferenceSetCellContent(i, 0, addrText);
-        sprintf_s(addrText, "%p", loops()[i].end);
+        sprintf_s(addrText, "%p", (void*)loops()[i].end);
         GuiReferenceSetCellContent(i, 1, addrText);
         sprintf_s(addrText, "%d", loops()[i].depth);
         GuiReferenceSetCellContent(i, 2, addrText);
-        sprintf_s(addrText, "%p", loops()[i].parent);
+        sprintf_s(addrText, "%p", (void*)loops()[i].parent);
         GuiReferenceSetCellContent(i, 3, addrText);
         char disassembly[GUI_MAX_DISASSEMBLY_SIZE] = "";
         if(GuiGetDisassembly(loops()[i].start, disassembly))

@@ -48,7 +48,6 @@ void SourceViewerManager::loadSourceFile(QString path, duint addr)
     if(idx != -1)
         title = path.mid(idx + 1);
     SourceView* newView = new SourceView(path, addr, this);
-    connect(newView, SIGNAL(showCpu()), this, SIGNAL(showCpu()));
     addTab(newView, title);
     setCurrentIndex(count() - 1);
     // https://forum.qt.io/post/132664
@@ -65,17 +64,14 @@ void SourceViewerManager::closeTab(int index)
     auto sourceView = qobject_cast<SourceView*>(widget(index));
     removeTab(index);
     if(sourceView)
-        sourceView->clear();
+        delete sourceView;
 }
 
 void SourceViewerManager::closeAllTabs()
 {
     while(count())
     {
-        auto sourceView = qobject_cast<SourceView*>(widget(0));
-        removeTab(0);
-        if(sourceView)
-            sourceView->clear();
+        closeTab(0);
     }
 }
 

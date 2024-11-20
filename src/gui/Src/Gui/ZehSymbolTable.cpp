@@ -56,23 +56,43 @@ ZehSymbolTable::ZehSymbolTable(QWidget* parent)
     Initialize();
 }
 
-QString ZehSymbolTable::getCellContent(int r, int c)
+QString ZehSymbolTable::getCellContent(duint row, duint column)
 {
     QMutexLocker lock(&mMutex);
-    if(!isValidIndex(r, c))
+    if(!isValidIndex(row, column))
         return QString();
     SymbolInfoWrapper info;
-    DbgGetSymbolInfo(&mData.at(r), info.put());
-    return symbolInfoString(info.get(), c);
+    DbgGetSymbolInfo(&mData.at(row), info.put());
+    return symbolInfoString(info.get(), column);
 }
 
-bool ZehSymbolTable::isValidIndex(int r, int c)
+duint ZehSymbolTable::getCellUserdata(duint row, duint column)
 {
     QMutexLocker lock(&mMutex);
-    return r >= 0 && r < (int)mData.size() && c >= 0 && c <= ColUndecorated;
+    if(!isValidIndex(row, column))
+        return 0;
+    SymbolInfoWrapper info;
+    DbgGetSymbolInfo(&mData.at(row), info.put());
+    switch(column)
+    {
+    case ColAddr:
+        return info->addr;
+    case ColOrdinal:
+        return info->ordinal;
+    case ColType:
+        return info->type;
+    default:
+        return 0;
+    }
 }
 
-void ZehSymbolTable::sortRows(int column, bool ascending)
+bool ZehSymbolTable::isValidIndex(duint row, duint column)
+{
+    QMutexLocker lock(&mMutex);
+    return row >= 0 && row < (int)mData.size() && column >= 0 && column <= ColUndecorated;
+}
+
+void ZehSymbolTable::sortRows(duint column, bool ascending)
 {
     QMutexLocker lock(&mMutex);
     std::stable_sort(mData.begin(), mData.end(), [this, column, ascending](const SYMBOLPTR & a, const SYMBOLPTR & b)
@@ -119,7 +139,7 @@ void ZehSymbolTable::sortRows(int column, bool ascending)
     });
 }
 
-QString ZehSymbolTable::symbolInfoString(const SYMBOLINFO* info, int c)
+QString ZehSymbolTable::symbolInfoString(const SYMBOLINFO* info, duint c)
 {
     switch(c)
     {
@@ -151,9 +171,9 @@ QString ZehSymbolTable::symbolInfoString(const SYMBOLINFO* info, int c)
         // Get module name for import symbols
         if(info->type == sym_import)
         {
-            duint wVA;
-            if(DbgMemRead(info->addr, &wVA, sizeof(duint)))
-                if(DbgGetModuleAt(wVA, modname))
+            duint va = 0;
+            if(DbgMemRead(info->addr, &va, sizeof(duint)))
+                if(DbgGetModuleAt(va, modname))
                     return QString(modname).append('.').append(info->decoratedSymbol);
         }
         return info->decoratedSymbol;
@@ -168,10 +188,10 @@ QString ZehSymbolTable::symbolInfoString(const SYMBOLINFO* info, int c)
             {
             case sym_import:
             {
-                duint wVA;
-                if(DbgMemRead(info->addr, &wVA, sizeof(duint)))
+                duint va = 0;
+                if(DbgMemRead(info->addr, &va, sizeof(duint)))
                 {
-                    DbgGetLabelAt(wVA, SEG_DEFAULT, label);
+                    DbgGetLabelAt(va, SEG_DEFAULT, label);
                     return label;
                 }
             }

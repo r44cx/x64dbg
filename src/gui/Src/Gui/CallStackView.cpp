@@ -1,12 +1,13 @@
 #include "CallStackView.h"
 #include "CommonActions.h"
 #include "Bridge.h"
+#include "DisassemblyPopup.h"
 
 CallStackView::CallStackView(StdTable* parent) : StdIconTable(parent)
 {
     int charwidth = getCharWidth();
 
-    addColumnAt(8 * charwidth, tr("Thread ID"), false);
+    addColumnAt(32 * charwidth, tr("Thread ID"), false);
     addColumnAt(8 + charwidth * sizeof(dsint) * 2, tr("Address"), false); //address in the stack
     addColumnAt(8 + charwidth * sizeof(dsint) * 2, tr("To"), false); //return to
     addColumnAt(8 + charwidth * sizeof(dsint) * 2, tr("From"), false); //return from
@@ -16,11 +17,13 @@ CallStackView::CallStackView(StdTable* parent) : StdIconTable(parent)
     setIconColumn(ColParty);
     loadColumnFromConfig("CallStack");
 
-    connect(Bridge::getBridge(), SIGNAL(updateCallStack()), this, SLOT(updateCallStack()));
+    connect(Bridge::getBridge(), SIGNAL(updateCallStack()), this, SLOT(updateCallStackSlot()));
     connect(this, SIGNAL(contextMenuSignal(QPoint)), this, SLOT(contextMenuSlot(QPoint)));
-    connect(this, SIGNAL(doubleClickedSignal()), this, SLOT(followFrom()));
+    connect(this, SIGNAL(doubleClickedSignal()), this, SLOT(followFromSlot()));
 
     setupContextMenu();
+
+    new DisassemblyPopup(this, Bridge::getArchitecture());
 }
 
 void CallStackView::setupContextMenu()
@@ -34,37 +37,57 @@ void CallStackView::setupContextMenu()
         return getSelectionVa();
     });
     QIcon icon = DIcon(ArchValue("processor32", "processor64"));
-    mMenuBuilder->addAction(makeAction(icon, tr("Follow &Address"), SLOT(followAddress())), [this](QMenu*)
+    mMenuBuilder->addAction(makeAction(icon, tr("Follow &Address"), SLOT(followAddressSlot())), [this](QMenu*)
     {
         return isSelectionValid();
     });
-    mMenuBuilder->addAction(makeAction(icon, tr("Follow &To"), SLOT(followTo())), [this](QMenu*)
+    mMenuBuilder->addAction(makeAction(icon, tr("Follow &To"), SLOT(followToSlot())), [this](QMenu*)
     {
         return isSelectionValid();
     });
-    QAction* mFollowFrom = mMenuBuilder->addAction(makeAction(icon, tr("Follow &From"), SLOT(followFrom())), [this](QMenu*)
+    QAction* mFollowFrom = mMenuBuilder->addAction(makeAction(icon, tr("Follow &From"), SLOT(followFromSlot())), [this](QMenu*)
     {
         return !getCellContent(getInitialSelection(), ColFrom).isEmpty() && isSelectionValid();
     });
+    QAction* loadSymbolsForThread = makeAction(DIcon("pdb"), tr("Download Symbols for This Thread"), SLOT(loadSymbolsForThreadSlot()));
+    mMenuBuilder->addAction(loadSymbolsForThread, [this](QMenu*)
+    {
+        return isSelectionValid();
+    });
     mFollowFrom->setShortcutContext(Qt::WidgetShortcut);
     mFollowFrom->setShortcut(QKeySequence("enter"));
-    connect(this, SIGNAL(enterPressedSignal()), this, SLOT(followFrom()));
+    connect(this, SIGNAL(enterPressedSignal()), this, SLOT(followFromSlot()));
     // Breakpoint menu
     // TODO: Is Label/Comment/Bookmark useful?
     mCommonActions->build(mMenuBuilder, CommonActions::ActionBreakpoint);
     mMenuBuilder->addSeparator();
-    QAction* wShowSuspectedCallStack = makeAction(tr("Show Suspected Call Stack Frame"), SLOT(showSuspectedCallStack()));
-    mMenuBuilder->addAction(wShowSuspectedCallStack, [wShowSuspectedCallStack](QMenu*)
+
+    QAction* showSuspectedCallStack = makeAction(tr("Show Suspected Call Stack Frame"), SLOT(showSuspectedCallStackSlot()));
+    mMenuBuilder->addAction(showSuspectedCallStack, [showSuspectedCallStack](QMenu*)
     {
         duint i;
         if(!BridgeSettingGetUint("Engine", "ShowSuspectedCallStack", &i))
             i = 0;
         if(i != 0)
-            wShowSuspectedCallStack->setText(tr("Show Active Call Stack Frame"));
+            showSuspectedCallStack->setText(tr("Show Active Call Stack Frame"));
         else
-            wShowSuspectedCallStack->setText(tr("Show Suspected Call Stack Frame"));
+            showSuspectedCallStack->setText(tr("Show Suspected Call Stack Frame"));
         return true;
     });
+
+    mMenuBuilder->addSeparator();
+    QAction* followInThreads = makeAction(DIcon("arrow-threads"), tr("Follow in Threads"), SLOT(followInThreadsSlot()));
+    mMenuBuilder->addAction(followInThreads, [this](QMenu*)
+    {
+        return isThreadHeaderSelected();
+    });
+
+    QAction* renameThread = makeAction(DIcon("thread-setname"), tr("Rename Thread"), SLOT(renameThreadSlot()));
+    mMenuBuilder->addAction(renameThread, [this](QMenu*)
+    {
+        return isThreadHeaderSelected();
+    });
+
     MenuBuilder* mCopyMenu = new MenuBuilder(this);
     setupCopyMenu(mCopyMenu);
     // Column count cannot be zero
@@ -73,16 +96,16 @@ void CallStackView::setupContextMenu()
     mMenuBuilder->loadFromConfig();
 }
 
-QString CallStackView::paintContent(QPainter* painter, dsint rowBase, int rowOffset, int col, int x, int y, int w, int h)
+QString CallStackView::paintContent(QPainter* painter, duint row, duint col, int x, int y, int w, int h)
 {
-    if(isSelected(rowBase, rowOffset))
+    if(isSelected(row))
         painter->fillRect(QRect(x, y, w, h), QBrush(mSelectionColor));
 
-    bool isSpaceRow = !getCellContent(rowBase + rowOffset, ColThread).isEmpty();
+    bool isSpaceRow = !getCellContent(row, ColThread).isEmpty();
 
-    if(col == ColThread && !(rowBase + rowOffset))
+    if(col == ColThread && row == 0)
     {
-        QString ret = getCellContent(rowBase + rowOffset, col);
+        QString ret = getCellContent(row, col);
         if(!ret.isEmpty())
         {
             painter->fillRect(QRect(x, y, w, h), QBrush(ConfigColor("ThreadCurrentBackgroundColor")));
@@ -98,8 +121,8 @@ QString CallStackView::paintContent(QPainter* painter, dsint rowBase, int rowOff
     }
     else if(col == ColFrom || col == ColTo || col == ColAddress)
     {
-        QString ret = getCellContent(rowBase + rowOffset, col);
-        BPXTYPE bpxtype = DbgGetBpxTypeAt(getCellUserdata(rowBase + rowOffset, col));
+        QString ret = getCellContent(row, col);
+        BPXTYPE bpxtype = DbgGetBpxTypeAt(getCellUserdata(row, col));
         if(bpxtype & bp_normal)
         {
             painter->fillRect(QRect(x, y, w, h), QBrush(ConfigColor("DisassemblyBreakpointBackgroundColor")));
@@ -115,10 +138,10 @@ QString CallStackView::paintContent(QPainter* painter, dsint rowBase, int rowOff
             return "";
         }
     }
-    return StdIconTable::paintContent(painter, rowBase, rowOffset, col, x, y, w, h);
+    return StdIconTable::paintContent(painter, row, col, x, y, w, h);
 }
 
-void CallStackView::updateCallStack()
+void CallStackView::updateCallStackSlot()
 {
     if(!DbgFunctions()->GetCallStackByThread)
         return;
@@ -127,7 +150,7 @@ void CallStackView::updateCallStack()
     memset(&threadList, 0, sizeof(THREADLIST));
     DbgGetThreadList(&threadList);
 
-    int currentRow = 0;
+    duint currentRow = 0;
     int currentIndexToDraw = 0;
     setRowCount(0);
     for(int j = 0; j < threadList.count; j++)
@@ -143,7 +166,15 @@ void CallStackView::updateCallStack()
         memset(&callstack, 0, sizeof(DBGCALLSTACK));
         DbgFunctions()->GetCallStackByThread(threadList.list[currentIndexToDraw].BasicInfo.Handle, &callstack);
         setRowCount(currentRow + callstack.total + 1);
-        setCellContent(currentRow, ColThread, ToDecString(threadList.list[currentIndexToDraw].BasicInfo.ThreadId));
+        auto threadId = threadList.list[currentIndexToDraw].BasicInfo.ThreadId;
+
+        QString threadName = threadList.list[currentIndexToDraw].BasicInfo.threadName;
+        QString colThreadString = ToDecString(threadList.list[currentIndexToDraw].BasicInfo.ThreadId);
+
+        if(threadName.size() > 0)
+            colThreadString += " - " + threadName; // The " - " is crucial here, because later split is happening
+
+        setCellContent(currentRow, ColThread, colThreadString);
 
         currentRow++;
 
@@ -158,6 +189,7 @@ void CallStackView::updateCallStack()
                 addrText = ToPtrString(callstack.entries[i].from);
                 setCellContent(currentRow, ColFrom, addrText);
             }
+            setCellUserdata(currentRow, ColThread, threadId);
             setCellUserdata(currentRow, ColFrom, callstack.entries[i].from);
             setCellUserdata(currentRow, ColTo, callstack.entries[i].to);
             setCellUserdata(currentRow, ColAddress, callstack.entries[i].addr);
@@ -196,31 +228,80 @@ void CallStackView::updateCallStack()
 
 void CallStackView::contextMenuSlot(const QPoint pos)
 {
-    QMenu wMenu(this); //create context menu
-    mMenuBuilder->build(&wMenu);
-    if(!wMenu.isEmpty())
-        wMenu.exec(mapToGlobal(pos)); //execute context menu
+    QMenu menu(this); //create context menu
+    mMenuBuilder->build(&menu);
+    if(!menu.isEmpty())
+        menu.exec(mapToGlobal(pos)); //execute context menu
 }
 
-void CallStackView::followAddress()
+void CallStackView::followAddressSlot()
 {
     QString addrText = getCellContent(getInitialSelection(), ColAddress);
     DbgCmdExecDirect(QString("sdump " + addrText));
+    switchThread();
 }
 
-void CallStackView::followTo()
+void CallStackView::followToSlot()
 {
     QString addrText = getCellContent(getInitialSelection(), ColTo);
     DbgCmdExecDirect(QString("disasm " + addrText));
+    switchThread();
 }
 
-void CallStackView::followFrom()
+void CallStackView::followFromSlot()
 {
     QString addrText = getCellContent(getInitialSelection(), ColFrom);
-    DbgCmdExecDirect(QString("disasm " + addrText));
+    // Double click signal is recieved by this as well, so we must check again.
+    if(!addrText.isEmpty() && isSelectionValid())
+    {
+        DbgCmdExecDirect(QString("disasm " + addrText));
+        switchThread();
+    }
 }
 
-void CallStackView::showSuspectedCallStack()
+void CallStackView::renameThreadSlot()
+{
+    QStringList split = getCellContent(getInitialSelection(), 0).split(" - ", QString::SplitBehavior::SkipEmptyParts);
+    duint threadId = split[0].toInt();
+    QString threadName = split.length() > 1 ? split[1] : "";
+    if(!SimpleInputBox(this, tr("Thread name - %1").arg(threadId), threadName, threadName, QString()))
+        return;
+
+    DbgCmdExec(QString("setthreadname %1, \"%2\"").arg(ToHexString(threadId)).arg(DbgCmdEscape(threadName)));
+}
+
+void CallStackView::loadSymbolsForThreadSlot()
+{
+    char module[MAX_MODULE_SIZE] = "";
+    duint firstRowForThread = 1;
+    const duint threadId = getCellUserdata(getInitialSelection(), ColThread);
+    for(duint row = getInitialSelection(); row > 0; --row)
+    {
+        if(getCellUserdata(row, ColThread) != threadId)
+        {
+            firstRowForThread = row + 1;
+            break;
+        }
+    }
+    for(duint row = firstRowForThread; row < getRowCount(); ++row)
+    {
+        if(getCellUserdata(row, ColThread) != threadId)
+            break;
+        if(DbgGetModuleAt(getCellUserdata(row, ColFrom), module))
+            DbgCmdExec(QString("symdownload \"%0\"").arg(module));
+    }
+}
+
+void CallStackView::followInThreadsSlot()
+{
+    QStringList threadIDName = getCellContent(getInitialSelection(), ColThread).split(" - ");
+    if(threadIDName[0].size() == 0)
+        return;
+
+    DbgCmdExecDirect(QString("showthreadid " + threadIDName[0]));
+}
+
+void CallStackView::showSuspectedCallStackSlot()
 {
     duint i;
     if(!BridgeSettingGetUint("Engine", "ShowSuspectedCallStack", &i))
@@ -228,8 +309,13 @@ void CallStackView::showSuspectedCallStack()
     i = (i == 0) ? 1 : 0;
     BridgeSettingSetUint("Engine", "ShowSuspectedCallStack", i);
     DbgSettingsUpdated();
-    updateCallStack();
+    updateCallStackSlot();
     emit Bridge::getBridge()->updateDump();
+}
+
+bool CallStackView::isThreadHeaderSelected()
+{
+    return !getCellContent(getInitialSelection(), ColThread).isEmpty();
 }
 
 bool CallStackView::isSelectionValid()
@@ -244,4 +330,13 @@ duint CallStackView::getSelectionVa()
         return getCellUserdata(getInitialSelection(), ColFrom);
     else
         return 0;
+}
+
+// Switch to the new thread if it is not the current thread
+void CallStackView::switchThread()
+{
+    DWORD currentThread = DbgGetThreadId();
+    DWORD newThread = getCellUserdata(getInitialSelection(), ColThread);
+    if(currentThread != newThread)
+        DbgCmdExecDirect(QString("switchthread %1").arg(ToHexString(newThread)).toUtf8().constData());
 }

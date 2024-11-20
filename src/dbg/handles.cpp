@@ -24,6 +24,7 @@ static void HandleTypesEnum()
         return;
 
     auto TypeInfo = TypesInformation()->TypeInformation;
+    HandleTypeNames.reserve(TypesInformation()->NumberOfTypes);
     for(ULONG i = 0; i < TypesInformation()->NumberOfTypes; i++)
     {
         auto wtypeName = WString(TypeInfo->TypeName.Buffer, TypeInfo->TypeName.Buffer + TypeInfo->TypeName.Length / 2);
@@ -177,8 +178,8 @@ bool HandlesGetName(HANDLE remoteHandle, String & name, String & typeName)
                     NTSTATUS isok = NtQueryInformationThread(hThread, ThreadBasicInformation, &threadInfo, sizeof(threadInfo), &threadInfoSize);
                     if(NT_SUCCESS(isok))
                     {
-                        TID = (DWORD)threadInfo.ClientId.UniqueThread;
-                        PID = (DWORD)threadInfo.ClientId.UniqueProcess;
+                        TID = (DWORD)(duint)threadInfo.ClientId.UniqueThread;
+                        PID = (DWORD)(duint)threadInfo.ClientId.UniqueProcess;
                     }
                 }
             };

@@ -53,7 +53,7 @@ PLUG_IMPEXP void _plugin_logputs(const char* text)
 
 PLUG_IMPEXP void _plugin_logprint(const char* text)
 {
-    dprintf_untranslated("%s", text);
+    dlogprint_untranslated(text);
 }
 
 PLUG_IMPEXP void _plugin_debugpause()
@@ -163,7 +163,7 @@ bool _plugin_registerexprfunction(int pluginHandle, const char* name, int argc, 
     return pluginexprfuncregister(pluginHandle, name, argc, cbFunction, userdata);
 }
 
-bool _plugin_registerexprfunctionex(int pluginHandle, const char* name, const ValueType & returnType, const ValueType* argTypes, size_t argCount, CBPLUGINEXPRFUNCTIONEX cbFunction, void* userdata)
+bool _plugin_registerexprfunctionex(int pluginHandle, const char* name, ValueType returnType, const ValueType* argTypes, size_t argCount, CBPLUGINEXPRFUNCTIONEX cbFunction, void* userdata)
 {
     return pluginexprfuncregisterex(pluginHandle, name, returnType, argTypes, argCount, cbFunction, userdata);
 }

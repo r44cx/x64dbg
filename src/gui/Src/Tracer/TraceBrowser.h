@@ -2,21 +2,21 @@
 
 #include "AbstractTableView.h"
 #include "VaHistory.h"
-#include "QBeaEngine.h"
+#include "QZydis.h"
+#include "TraceFileReader.h"
 
-class TraceFileReader;
+class TraceWidget;
 class BreakpointMenu;
-class MRUList;
 class CommonActions;
 
 class TraceBrowser : public AbstractTableView
 {
     Q_OBJECT
 public:
-    explicit TraceBrowser(QWidget* parent = 0);
+    explicit TraceBrowser(TraceFileReader* traceFile, TraceWidget* parent = nullptr);
     ~TraceBrowser() override;
 
-    QString paintContent(QPainter* painter, dsint rowBase, int rowOffset, int col, int x, int y, int w, int h) override;
+    QString paintContent(QPainter* painter, duint row, duint col, int x, int y, int w, int h) override;
 
     void prepareData() override;
     void updateColors() override;
@@ -59,8 +59,8 @@ private:
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
 
-    ZydisTokenizer::InstructionToken memoryTokens(unsigned long long atIndex);
-    ZydisTokenizer::InstructionToken registersTokens(unsigned long long atIndex);
+    ZydisTokenizer::InstructionToken memoryTokens(TRACEINDEX atIndex);
+    ZydisTokenizer::InstructionToken registersTokens(TRACEINDEX atIndex);
     VaHistory mHistory;
     MenuBuilder* mMenuBuilder;
     CommonActions* mCommonActions;
@@ -83,14 +83,12 @@ private:
 
     TraceFileReader* mTraceFile;
     BreakpointMenu* mBreakpointMenu;
-    MRUList* mMRUList;
     QString mFileName;
 
     QColor mBytesColor;
     QColor mBytesBackgroundColor;
 
     QColor mInstructionHighlightColor;
-    QColor mSelectionColor;
 
     QColor mCipBackgroundColor;
     QColor mCipColor;
@@ -147,24 +145,28 @@ private:
     int paintFunctionGraphic(QPainter* painter, int x, int y, Function_t funcType, bool loop);
 
 signals:
-    void displayReferencesWidget();
     void displayLogWidget();
-    void selectionChanged(unsigned long long selection);
+    void selectionChanged(TRACEINDEX selection);
+    void xrefSignal(duint addr);
+    void closeFile();
 
 public slots:
     void openFileSlot();
     void openSlot(const QString & fileName);
+    void browseInExplorerSlot();
     void toggleTraceRecordingSlot();
     void closeFileSlot();
     void closeDeleteSlot();
     void parseFinishedSlot();
     void tokenizerConfigUpdatedSlot();
-    void selectionChangedSlot(unsigned long long selection);
+    void selectionChangedSlot(TRACEINDEX selection);
 
     void gotoSlot();
+    void gotoIndexSlot();
     void rtrSlot();
     void gotoPreviousSlot();
     void gotoNextSlot();
+    void gotoXrefSlot();
     void enableHighlightingModeSlot();
     void mnemonicBriefSlot();
     void mnemonicHelpSlot();
@@ -186,7 +188,13 @@ public slots:
 
     void synchronizeCpuSlot();
     void gotoIndexSlot(duint index);
+    void gotoAddressSlot(duint index);
 
-protected:
-    void disasm(unsigned long long index, bool history = true);
+private:
+    // Go to by index
+    void disasm(TRACEINDEX index, bool history = true);
+    // Go to by address, display the Xref dialog if multiple indicies are found
+    void disasmByAddress(duint address, bool history = true);
+    TraceWidget* mParent;
 };
+

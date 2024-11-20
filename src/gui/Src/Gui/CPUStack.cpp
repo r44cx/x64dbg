@@ -9,36 +9,37 @@
 #include "CPUMultiDump.h"
 #include "GotoDialog.h"
 
-CPUStack::CPUStack(CPUMultiDump* multiDump, QWidget* parent) : HexDump(parent)
+CPUStack::CPUStack(CPUMultiDump* multiDump, QWidget* parent)
+    : HexDump(multiDump->getArchitecture(), parent)
 {
     setWindowTitle("Stack");
     setShowHeader(false);
     int charwidth = getCharWidth();
-    ColumnDescriptor wColDesc;
+    ColumnDescriptor colDesc;
     DataDescriptor dDesc;
     mMultiDump = multiDump;
 
     mForceColumn = 1;
 
-    wColDesc.isData = true; //void*
-    wColDesc.itemCount = 1;
-    wColDesc.separator = 0;
+    colDesc.isData = true; //void*
+    colDesc.itemCount = 1;
+    colDesc.separator = 0;
 #ifdef _WIN64
-    wColDesc.data.itemSize = Qword;
-    wColDesc.data.qwordMode = HexQword;
+    colDesc.data.itemSize = Qword;
+    colDesc.data.qwordMode = HexQword;
 #else
-    wColDesc.data.itemSize = Dword;
-    wColDesc.data.dwordMode = HexDword;
+    colDesc.data.itemSize = Dword;
+    colDesc.data.dwordMode = HexDword;
 #endif
-    appendDescriptor(10 + charwidth * 2 * sizeof(duint), "void*", false, wColDesc);
+    appendDescriptor(10 + charwidth * 2 * sizeof(duint), "void*", false, colDesc);
 
-    wColDesc.isData = false; //comments
-    wColDesc.itemCount = 0;
-    wColDesc.separator = 0;
+    colDesc.isData = false; //comments
+    colDesc.itemCount = 0;
+    colDesc.separator = 0;
     dDesc.itemSize = Byte;
     dDesc.byteMode = AsciiByte;
-    wColDesc.data = dDesc;
-    appendDescriptor(2000, tr("Comments"), false, wColDesc);
+    colDesc.data = dDesc;
+    appendDescriptor(2000, tr("Comments"), false, colDesc);
 
     setupContextMenu();
 
@@ -281,10 +282,8 @@ void CPUStack::setupContextMenu()
     });
 
     //Follow PTR in Dump
-    auto followDumpName = ArchValue(tr("Follow DWORD in &Dump"), tr("Follow QWORD in &Dump"));
-
     mCommonActions->build(mMenuBuilder, CommonActions::ActionDumpN | CommonActions::ActionWatch);
-    mMenuBuilder->addAction(makeAction("Edit columns...", SLOT(editColumnDialog())));
+    mMenuBuilder->addAction(makeAction(tr("Edit columns..."), SLOT(editColumnDialog())));
 
     mPluginMenu = new QMenu(this);
     Bridge::getBridge()->emitMenuAddToList(this, mPluginMenu, GUI_STACK_MENU);
@@ -309,12 +308,12 @@ void CPUStack::updateFreezeStackAction()
     mFreezeStack->setChecked(bStackFrozen);
 }
 
-void CPUStack::getColumnRichText(int col, dsint rva, RichTextPainter::List & richText)
+void CPUStack::getColumnRichText(duint col, duint rva, RichTextPainter::List & richText)
 {
     // Compute VA
-    duint wVa = rvaToVa(rva);
+    duint va = rvaToVa(rva);
 
-    bool wActiveStack = (wVa >= mCsp); //inactive stack
+    bool activeStack = (va >= mCsp); //inactive stack
 
     STACK_COMMENT comment;
     RichTextPainter::CustomRichText_t curData;
@@ -325,7 +324,7 @@ void CPUStack::getColumnRichText(int col, dsint rva, RichTextPainter::List & ric
     if(col && mDescriptor.at(col - 1).isData == true) //paint stack data
     {
         HexDump::getColumnRichText(col, rva, richText);
-        if(!wActiveStack)
+        if(!activeStack)
         {
             QColor inactiveColor = ConfigColor("StackInactiveTextColor");
             for(int i = 0; i < int(richText.size()); i++)
@@ -335,9 +334,9 @@ void CPUStack::getColumnRichText(int col, dsint rva, RichTextPainter::List & ric
             }
         }
     }
-    else if(col && DbgStackCommentGet(wVa, &comment)) //paint stack comments
+    else if(col && DbgStackCommentGet(va, &comment)) //paint stack comments
     {
-        if(wActiveStack)
+        if(activeStack)
         {
             if(*comment.color)
             {
@@ -365,24 +364,24 @@ void CPUStack::getColumnRichText(int col, dsint rva, RichTextPainter::List & ric
         HexDump::getColumnRichText(col, rva, richText);
 }
 
-QString CPUStack::paintContent(QPainter* painter, dsint rowBase, int rowOffset, int col, int x, int y, int w, int h)
+QString CPUStack::paintContent(QPainter* painter, duint row, duint col, int x, int y, int w, int h)
 {
     // Compute RVA
-    int wBytePerRowCount = getBytePerRowCount();
-    dsint wRva = (rowBase + rowOffset) * wBytePerRowCount - mByteOffset;
-    duint wVa = rvaToVa(wRva);
+    auto bytePerRowCount = getBytePerRowCount();
+    dsint rva = row * bytePerRowCount - mByteOffset;
+    duint va = rvaToVa(rva);
 
-    bool wIsSelected = isSelected(wRva);
-    if(wIsSelected) //highlight if selected
+    bool rowSelected = isSelected(rva);
+    if(rowSelected) //highlight if selected
         painter->fillRect(QRect(x, y, w, h), QBrush(mSelectionColor));
 
     if(col == 0) // paint stack address
     {
         QColor background;
         char labelText[MAX_LABEL_SIZE] = "";
-        if(DbgGetLabelAt(wVa, SEG_DEFAULT, labelText)) //label
+        if(DbgGetLabelAt(va, SEG_DEFAULT, labelText)) //label
         {
-            if(wVa == mCsp) //CSP
+            if(va == mCsp) //CSP
             {
                 background = ConfigColor("StackCspBackgroundColor");
                 painter->setPen(QPen(ConfigColor("StackCspColor")));
@@ -395,12 +394,12 @@ QString CPUStack::paintContent(QPainter* painter, dsint rowBase, int rowOffset, 
         }
         else //no label
         {
-            if(wVa == mCsp) //CSP
+            if(va == mCsp) //CSP
             {
                 background = ConfigColor("StackCspBackgroundColor");
                 painter->setPen(QPen(ConfigColor("StackCspColor")));
             }
-            else if(wIsSelected) //selected normal address
+            else if(rowSelected) //selected normal address
             {
                 background = ConfigColor("StackSelectedAddressBackgroundColor");
                 painter->setPen(QPen(ConfigColor("StackSelectedAddressColor"))); //black address (DisassemblySelectedAddressColor)
@@ -413,7 +412,7 @@ QString CPUStack::paintContent(QPainter* painter, dsint rowBase, int rowOffset, 
         }
         if(background.alpha())
             painter->fillRect(QRect(x, y, w, h), QBrush(background)); //fill background when defined
-        painter->drawText(QRect(x + 4, y, w - 4, h), Qt::AlignVCenter | Qt::AlignLeft, makeAddrText(wVa));
+        painter->drawText(QRect(x + 4, y, w - 4, h), Qt::AlignVCenter | Qt::AlignLeft, makeAddrText(va));
         return QString();
     }
     else if(col == 1) // paint stack data
@@ -422,14 +421,14 @@ QString CPUStack::paintContent(QPainter* painter, dsint rowBase, int rowOffset, 
         {
             int stackFrameBitfield = 0; // 0:none, 1:top of stack frame, 2:bottom of stack frame, 4:middle of stack frame
             int party = 0;
-            if(wVa >= mCallstack[0].addr)
+            if(va >= mCallstack[0].addr)
             {
                 for(size_t i = 0; i < mCallstack.size() - 1; i++)
                 {
-                    if(wVa >= mCallstack[i].addr && wVa < mCallstack[i + 1].addr)
+                    if(va >= mCallstack[i].addr && va < mCallstack[i + 1].addr)
                     {
-                        stackFrameBitfield |= (mCallstack[i].addr == wVa) ? 1 : 0;
-                        stackFrameBitfield |= (mCallstack[i + 1].addr == wVa + sizeof(duint)) ? 2 : 0;
+                        stackFrameBitfield |= (mCallstack[i].addr == va) ? 1 : 0;
+                        stackFrameBitfield |= (mCallstack[i + 1].addr == va + sizeof(duint)) ? 2 : 0;
                         if(stackFrameBitfield == 0)
                             stackFrameBitfield = 4;
                         party = mCallstack[i].party;
@@ -438,14 +437,14 @@ QString CPUStack::paintContent(QPainter* painter, dsint rowBase, int rowOffset, 
                 }
                 // draw stack frame
                 if(stackFrameBitfield == 0)
-                    return HexDump::paintContent(painter, rowBase, rowOffset, 1, x, y, w, h);
+                    return HexDump::paintContent(painter, row, 1, x, y, w, h);
                 else
                 {
                     int height = getRowHeight();
                     int halfHeight = height / 2;
                     int width = 5;
                     int offset = 2;
-                    auto result = HexDump::paintContent(painter, rowBase, rowOffset, 1, x + (width - 2), y, w - (width - 2), h);
+                    auto result = HexDump::paintContent(painter, row, 1, x + (width - 2), y, w - (width - 2), h);
                     if(party == mod_user)
                         painter->setPen(QPen(mUserStackFrameColor, 2));
                     else
@@ -468,20 +467,20 @@ QString CPUStack::paintContent(QPainter* painter, dsint rowBase, int rowOffset, 
                 }
             }
             else
-                return HexDump::paintContent(painter, rowBase, rowOffset, 1, x, y, w, h);
+                return HexDump::paintContent(painter, row, 1, x, y, w, h);
         }
         else
-            return HexDump::paintContent(painter, rowBase, rowOffset, 1, x, y, w, h);
+            return HexDump::paintContent(painter, row, 1, x, y, w, h);
     }
     else
-        return HexDump::paintContent(painter, rowBase, rowOffset, col, x, y, w, h);
+        return HexDump::paintContent(painter, row, col, x, y, w, h);
 }
 
 void CPUStack::contextMenuEvent(QContextMenuEvent* event)
 {
-    QMenu wMenu(this); //create context menu
-    mMenuBuilder->build(&wMenu);
-    wMenu.exec(event->globalPos());
+    QMenu menu(this); //create context menu
+    mMenuBuilder->build(&menu);
+    menu.exec(event->globalPos());
 }
 
 void CPUStack::mouseDoubleClickEvent(QMouseEvent* event)
@@ -493,12 +492,14 @@ void CPUStack::mouseDoubleClickEvent(QMouseEvent* event)
     case 0: //address
     {
         //very ugly way to calculate the base of the current row (no clue why it works)
-        dsint deltaRowBase = getInitialSelection() % getBytePerRowCount() + mByteOffset;
+        auto deltaRowBase = getInitialSelection() % getBytePerRowCount() + mByteOffset;
         if(deltaRowBase >= getBytePerRowCount())
             deltaRowBase -= getBytePerRowCount();
         dsint mSelectedVa = rvaToVa(getInitialSelection() - deltaRowBase);
         if(mRvaDisplayEnabled && mSelectedVa == mRvaDisplayBase)
+        {
             mRvaDisplayEnabled = false;
+        }
         else
         {
             mRvaDisplayEnabled = true;
@@ -517,9 +518,9 @@ void CPUStack::mouseDoubleClickEvent(QMouseEvent* event)
 
     default:
     {
-        duint wVa = rvaToVa(getInitialSelection());
+        duint va = rvaToVa(getInitialSelection());
         STACK_COMMENT comment;
-        if(DbgStackCommentGet(wVa, &comment) && strcmp(comment.color, "!rtnclr") == 0)
+        if(DbgStackCommentGet(va, &comment) && strcmp(comment.color, "!rtnclr") == 0)
             followDisasmSlot();
     }
     break;
@@ -600,7 +601,7 @@ void CPUStack::updateSlot()
     }
 }
 
-void CPUStack::disasmSelectionChanged(dsint parVA)
+void CPUStack::disasmSelectionChanged(duint parVA)
 {
     // When the selected instruction is changed, select the argument that is in the stack.
     DISASM_INSTR instr;
@@ -653,11 +654,11 @@ void CPUStack::gotoCbpSlot()
     DbgCmdExec("sdump cbp");
 }
 
-int CPUStack::getCurrentFrame(const std::vector<CPUStack::CPUCallStack> & mCallstack, duint wVA)
+int CPUStack::getCurrentFrame(const std::vector<CPUStack::CPUCallStack> & mCallstack, duint va)
 {
     if(mCallstack.size())
         for(size_t i = 0; i < mCallstack.size() - 1; i++)
-            if(wVA >= mCallstack[i].addr && wVA < mCallstack[i + 1].addr)
+            if(va >= mCallstack[i].addr && va < mCallstack[i + 1].addr)
                 return int(i);
     return -1;
 }
@@ -775,6 +776,7 @@ void CPUStack::followStackSlot()
 void CPUStack::binaryEditSlot()
 {
     HexEditDialog hexEdit(this);
+    hexEdit.showKeepSize(true);
     dsint selStart = getSelectionStart();
     dsint selSize = getSelectionEnd() - selStart + 1;
     byte_t* data = new byte_t[selSize];
@@ -796,7 +798,6 @@ void CPUStack::binaryEditSlot()
 void CPUStack::binaryFillSlot()
 {
     HexEditDialog hexEdit(this);
-    hexEdit.showKeepSize(false);
     hexEdit.mHexEdit->setOverwriteMode(false);
     dsint selStart = getSelectionStart();
     hexEdit.setWindowTitle(tr("Fill data at %1").arg(ToPtrString(rvaToVa(selStart))));
@@ -862,15 +863,19 @@ void CPUStack::binaryPasteIgnoreSizeSlot()
 void CPUStack::findPattern()
 {
     HexEditDialog hexEdit(this);
-    hexEdit.showEntireBlock(true);
     hexEdit.isDataCopiable(false);
+    hexEdit.showStartFromSelection(true, ConfigBool("Gui", "CPUStackStartFromSelect"));
     hexEdit.mHexEdit->setOverwriteMode(false);
     hexEdit.setWindowTitle(tr("Find Pattern..."));
     if(hexEdit.exec() != QDialog::Accepted)
         return;
+
     dsint addr = rvaToVa(getSelectionStart());
-    if(hexEdit.entireBlock())
+    bool startFromSelection = hexEdit.startFromSelection();
+    Config()->setBool("Gui", "CPUStackStartFromSelect", startFromSelection);
+    if(!startFromSelection)
         addr = DbgMemFindBaseAddr(addr, 0);
+
     QString addrText = ToPtrString(addr);
     DbgCmdExec(QString("findall " + addrText + ", " + hexEdit.mHexEdit->pattern() + ", &data&"));
     emit displayReferencesWidget();
@@ -889,13 +894,13 @@ void CPUStack::undoSelectionSlot()
 void CPUStack::modifySlot()
 {
     dsint addr = getInitialSelection();
-    WordEditDialog wEditDialog(this);
+    WordEditDialog editDialog(this);
     dsint value = 0;
     mMemPage->read(&value, addr, sizeof(dsint));
-    wEditDialog.setup(tr("Modify"), value, sizeof(dsint));
-    if(wEditDialog.exec() != QDialog::Accepted)
+    editDialog.setup(tr("Modify"), value, sizeof(dsint));
+    if(editDialog.exec() != QDialog::Accepted)
         return;
-    value = wEditDialog.getVal();
+    value = editDialog.getVal();
     mMemPage->write(&value, addr, sizeof(dsint));
     GuiUpdateAllViews();
 }

@@ -11,6 +11,7 @@
 #include "value.h"
 #include "TraceRecord.h"
 #include "exhandlerinfo.h"
+#include "exception.h"
 #include <vector>
 #include <regex>
 #include <string>
@@ -189,9 +190,11 @@ namespace Exprfunc
         return result;
     }
 
-    duint ternary(duint condition, duint value1, duint value2)
+    bool ternary(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata)
     {
-        return condition ? value1 : value2;
+        *result = argv[0].number ? argv[1] : argv[2];
+        result->string.isOwner = false;
+        return true;
     }
 
     duint memvalid(duint addr)
@@ -282,9 +285,9 @@ namespace Exprfunc
         unsigned char data[16];
         if(MemRead(addr, data, sizeof(data), nullptr, true))
         {
-            Zydis cp;
-            if(cp.Disassemble(addr, data))
-                return cp.IsNop();
+            Zydis zydis;
+            if(zydis.Disassemble(addr, data))
+                return zydis.IsNop();
         }
         return false;
     }
@@ -294,9 +297,9 @@ namespace Exprfunc
         unsigned char data[16];
         if(MemRead(addr, data, sizeof(data), nullptr, true))
         {
-            Zydis cp;
-            if(cp.Disassemble(addr, data))
-                return cp.IsUnusual();
+            Zydis zydis;
+            if(zydis.Disassemble(addr, data))
+                return zydis.IsUnusual();
         }
         return false;
     }
@@ -446,11 +449,16 @@ namespace Exprfunc
     duint gettickcount()
     {
 #ifdef _WIN64
-        static auto GTC64 = (duint(*)())GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "GetTickCount64");
+        static auto GTC64 = (ULONGLONG(*)())GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "GetTickCount64");
         if(GTC64)
             return GTC64();
 #endif //_WIN64
         return GetTickCount();
+    }
+
+    duint rdtsc()
+    {
+        return (duint)__rdtsc();
     }
 
     static duint readMem(duint addr, duint size)
@@ -600,6 +608,31 @@ namespace Exprfunc
         return getLastExceptionInfo().ExceptionRecord.ExceptionInformation[index];
     }
 
+    duint isprocessfocused(DWORD process)
+    {
+        HWND foreground = GetForegroundWindow();
+        if(foreground)
+        {
+            DWORD pid;
+            DWORD tid = GetWindowThreadProcessId(foreground, &pid);
+            return pid == process;
+        }
+        else
+            return 0;
+    }
+
+    duint isdebuggerfocused()
+    {
+        return isprocessfocused(GetCurrentProcessId());
+    }
+
+    duint isdebuggeefocused()
+    {
+        if(!DbgIsDebugging())
+            return 0;
+        return isprocessfocused(fdProcessInfo->dwProcessId);
+    }
+
     bool streq(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata)
     {
         assert(argc == 2);
@@ -638,13 +671,17 @@ namespace Exprfunc
 
         size_t len1 = ::strlen(argv[0].string.ptr);
         size_t len2 = ::strlen(argv[1].string.ptr);
-        auto it = std::search(
-                      argv[0].string.ptr, argv[0].string.ptr + len1,
-                      argv[1].string.ptr, argv[1].string.ptr + len2,
-        [](char ch1, char ch2) { return std::toupper(ch1) == std::toupper(ch2); }
-                  );
+        auto lowercompare = [](char ch1, char ch2)
+        {
+            return StringUtils::ToLower(ch1) == StringUtils::ToLower(ch2);
+        };
+        auto found = std::search(
+                         argv[0].string.ptr, argv[0].string.ptr + len1,
+                         argv[1].string.ptr, argv[1].string.ptr + len2,
+                         lowercompare
+                     ) != argv[0].string.ptr + len1;
 
-        *result = ValueNumber(it != argv[0].string.ptr + len1);
+        *result = ValueNumber(found);
         return true;
     }
 
@@ -657,46 +694,115 @@ namespace Exprfunc
         return true;
     }
 
-    bool utf16(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata)
+    template<bool Strict, typename T>
+    bool readstring(std::vector<T> & temp, int argc, const ExpressionValue* argv, void* userdata)
     {
-        assert(argc == 1);
+        assert(argc >= 1);
         assert(argv[0].type == ValueTypeNumber);
 
         duint addr = argv[0].number;
 
-        std::vector<wchar_t> tempStr(MAX_STRING_SIZE + 1);
+        auto truncate = argc > 1;
+        if(truncate)
+        {
+            assert(argv[1].type == ValueTypeNumber);
+            temp.resize(argv[1].number + 1);
+        }
+        else
+        {
+            // TODO: check for null-termination and resize accordingly
+            temp.resize(MAX_STRING_SIZE + 1);
+        }
+
         duint NumberOfBytesRead = 0;
-        if(!MemRead(addr, tempStr.data(), sizeof(wchar_t) * (tempStr.size() - 1), &NumberOfBytesRead) && NumberOfBytesRead == 0)
+        if(!MemRead(addr, temp.data(), temp.size() - 1, &NumberOfBytesRead) && NumberOfBytesRead == 0 && Strict)
         {
             return false;
         }
-
-        auto utf8Str = StringUtils::Utf16ToUtf8(tempStr.data());
-        if(utf8Str.empty() && wcslen(tempStr.data()) > 0)
-        {
-            return false;
-        }
-
-        *result = ValueString(utf8Str);
 
         return true;
     }
 
+    template<bool Strict>
+    bool ansi(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata)
+    {
+        std::vector<char> temp;
+        if(!readstring<Strict>(temp, argc, argv, userdata))
+            return false;
+
+        *result = ValueString(StringUtils::LocalCpToUtf8(temp.data()));
+        return true;
+    }
+
+    template<bool Strict>
     bool utf8(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata)
     {
-        assert(argc == 1);
-        assert(argv[0].type == ValueTypeNumber);
-
-        duint addr = argv[0].number;
-
-        std::vector<char> tempStr(MAX_STRING_SIZE + 1);
-        duint NumberOfBytesRead = 0;
-        if(!MemRead(addr, tempStr.data(), tempStr.size() - 1, &NumberOfBytesRead) && NumberOfBytesRead == 0)
-        {
+        std::vector<char> temp;
+        if(!readstring<Strict>(temp, argc, argv, userdata))
             return false;
-        }
 
-        *result = ValueString(tempStr.data());
+        *result = ValueString(temp.data());
+        return true;
+    }
+
+    template<bool Strict>
+    bool utf16(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata)
+    {
+        std::vector<wchar_t> temp;
+        if(!readstring<Strict>(temp, argc, argv, userdata))
+            return false;
+
+        auto utf8Str = StringUtils::Utf16ToUtf8(temp.data());
+        if(utf8Str.empty() && wcslen(temp.data()) > 0)
+            return false;
+
+        *result = ValueString(utf8Str);
+        return true;
+    }
+
+    bool ansi(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata)
+    {
+        return ansi<false>(result, argc, argv, userdata);
+    }
+
+    bool ansi_strict(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata)
+    {
+        return ansi<true>(result, argc, argv, userdata);
+    }
+
+    bool utf8(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata)
+    {
+        return utf8<false>(result, argc, argv, userdata);
+    }
+
+    bool utf8_strict(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata)
+    {
+        return utf8<true>(result, argc, argv, userdata);
+    }
+
+    bool utf16(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata)
+    {
+        return utf16<false>(result, argc, argv, userdata);
+    }
+
+    bool utf16_strict(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata)
+    {
+        return utf16<true>(result, argc, argv, userdata);
+    }
+
+    bool syscall_name(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata)
+    {
+        *result = ValueString(SyscallToName((unsigned int)argv[0].number));
+        return true;
+    }
+
+    bool syscall_id(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata)
+    {
+        auto id = SyscallToId(argv[0].string.ptr);
+        if(id == -1)
+            return false;
+
+        *result = ValueNumber(id);
         return true;
     }
 }

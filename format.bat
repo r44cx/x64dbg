@@ -1,2 +1,4 @@
 @echo off
-hooks\AStyleHelper.exe Silent
+call %~dp0.github\format\install-git-hook.bat
+echo Formatting code...
+%~dp0.github\format\AStyleHelper.exe Silent

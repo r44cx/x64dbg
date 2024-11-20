@@ -1,18 +1,19 @@
 #pragma once
 
 #include "StdTable.h"
+#include "TraceFileReader.h"
 
 class TraceWidget;
-class TraceFileReader;
 
 class TraceInfoBox : public StdTable
 {
     Q_OBJECT
 public:
     TraceInfoBox(TraceWidget* parent);
+    int getHeight();
     ~TraceInfoBox();
 
-    void update(unsigned long long selection, TraceFileReader* traceFile, const REGDUMP & registers);
+    void update(TRACEINDEX selection, TraceFileReader* traceFile, const REGDUMP & registers);
     void clear();
 
 public slots:
@@ -23,4 +24,6 @@ private:
     void setupShortcuts();
 
     QAction* mCopyLineAction;
+    TraceWidget* mParent;
+    duint mCurAddr;
 };

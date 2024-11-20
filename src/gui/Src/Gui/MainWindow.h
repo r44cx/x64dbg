@@ -33,7 +33,7 @@ class SettingsDialog;
 class SimpleTraceDialog;
 class MRUList;
 class UpdateChecker;
-class TraceWidget;
+class TraceManager;
 
 namespace Ui
 {
@@ -45,7 +45,7 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    explicit MainWindow(QWidget* parent = 0);
+    explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow();
 
     void setupCommandBar();
@@ -80,16 +80,12 @@ public slots:
     void displayBreakpointWidget();
     void updateWindowTitleSlot(QString filename);
     void runSlot();
-    void execTRBit();
-    void execTRByte();
-    void execTRWord();
-    void execTRNone();
+    void displayThreadsWidget();
     void displayCpuWidget();
     void displayCpuWidgetShowCpu();
     void displaySymbolWidget();
     void displaySourceViewWidget();
     void displayReferencesWidget();
-    void displayThreadsWidget();
     void displayVariables();
     void displayGraphWidget();
     void displayTraceWidget();
@@ -130,6 +126,7 @@ public slots:
     void refreshShortcuts();
     void openShortcuts();
     void changeTopmost(bool checked);
+    void mnemonicHelp();
     void donate();
     void blog();
     void reportBug();
@@ -177,7 +174,7 @@ private:
     CalculatorDialog* mCalculatorDialog;
     HandlesView* mHandlesView;
     NotesManager* mNotesManager;
-    TraceWidget* mTraceWidget;
+    TraceManager* mTraceWidget;
     SimpleTraceDialog* mSimpleTraceDialog;
     UpdateChecker* mUpdateChecker;
     DebugStatusLabel* mStatusLabel;

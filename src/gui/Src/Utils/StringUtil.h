@@ -19,11 +19,11 @@ inline QString ToPtrString(duint Address)
 
     char temp[32];
 #ifdef _WIN64
-    sprintf_s(temp, "%016llX", Address);
+    auto size = sprintf_s(temp, "%016llX", Address);
 #else
-    sprintf_s(temp, "%08X", Address);
+    auto size = sprintf_s(temp, "%08X", Address);
 #endif // _WIN64
-    return QString(temp);
+    return QString::fromLatin1(temp, size);
 }
 
 inline QString ToLongLongHexString(unsigned long long Value)
@@ -80,9 +80,9 @@ template<typename T>
 inline QString ToFloatingString(const void* buffer, int precision)
 {
     auto value = *(const T*)buffer;
-    std::stringstream wFloatingStr;
-    wFloatingStr << std::setprecision(precision) << value;
-    return QString::fromStdString(wFloatingStr.str());
+    std::stringstream floatingStr;
+    floatingStr << std::setprecision(precision) << value;
+    return QString::fromStdString(floatingStr.str());
 }
 
 template<typename T>
@@ -103,6 +103,9 @@ inline QString ToDoubleString(const void* buffer, int precision = std::numeric_l
 }
 
 QString ToLongDoubleString(const void* buffer);
+
+// yyyyMMdd-HHmmss (useful for file suffix)
+QString isoDateTime();
 
 QString ToDateString(const QDate & date);
 
@@ -142,3 +145,5 @@ QString FILETIMEToDate(const FILETIME & date);
 bool GetCommentFormat(duint addr, QString & comment, bool* autoComment = nullptr);
 
 QString EscapeCh(QChar ch);
+
+QString DbgCmdEscape(QString argument);

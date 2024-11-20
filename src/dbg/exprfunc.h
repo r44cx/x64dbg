@@ -26,7 +26,7 @@ namespace Exprfunc
     duint kusd();
 
     duint bswap(duint value);
-    duint ternary(duint condition, duint value1, duint value2);
+    bool ternary(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
 
     duint memvalid(duint addr);
     duint membase(duint addr);
@@ -59,6 +59,7 @@ namespace Exprfunc
     duint trhitcount(duint addr);
     duint trisrecording();
     duint gettickcount();
+    duint rdtsc();
 
     duint readbyte(duint addr);
     duint readword(duint addr);
@@ -86,11 +87,21 @@ namespace Exprfunc
     duint exinfocount();
     duint exinfo(duint index);
 
+    duint isdebuggerfocused();
+    duint isdebuggeefocused();
+
     bool streq(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
     bool strieq(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
     bool strstr(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
     bool stristr(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
     bool strlen(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
-    bool utf16(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
+    bool ansi(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
+    bool ansi_strict(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
     bool utf8(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
+    bool utf8_strict(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
+    bool utf16(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
+    bool utf16_strict(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
+
+    bool syscall_name(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
+    bool syscall_id(ExpressionValue* result, int argc, const ExpressionValue* argv, void* userdata);
 }

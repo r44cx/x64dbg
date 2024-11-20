@@ -7,17 +7,17 @@ class MemoryPage : public QObject
 {
     Q_OBJECT
 public:
-    explicit MemoryPage(duint parBase, duint parSize, QObject* parent = 0);
+    explicit MemoryPage(duint parBase, duint parSize, QObject* parent = nullptr);
 
-    bool read(void* parDest, dsint parRVA, duint parSize) const;
-    bool write(const void* parDest, dsint parRVA, duint parSize);
+    virtual bool read(void* parDest, dsint parRVA, duint parSize) const;
+    virtual bool write(const void* parDest, dsint parRVA, duint parSize);
     duint getSize() const;
     duint getBase() const;
     duint va(dsint rva) const;
     void setAttributes(duint base, duint size);
     bool inRange(duint va) const;
 
-private:
+protected:
     duint mBase;
     duint mSize;
 };

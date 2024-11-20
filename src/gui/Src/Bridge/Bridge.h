@@ -7,6 +7,15 @@
 #include <QMenu>
 #include "Imports.h"
 #include "BridgeResult.h"
+#include "Architecture.h"
+
+#if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
+namespace Qt
+{
+    static QString::SplitBehavior KeepEmptyParts = QString::KeepEmptyParts;
+    static QString::SplitBehavior SkipEmptyParts = QString::SkipEmptyParts;
+}
+#endif // QT_VERSION
 
 class ReferenceManager;
 class SymbolView;
@@ -17,12 +26,18 @@ class Bridge : public QObject
 
     friend class BridgeResult;
 
+    void doUpdate(GUIMSG msg);
+
+private slots:
+    void throttleUpdateSlot(GUIMSG msg);
+
 public:
-    explicit Bridge(QObject* parent = 0);
+    explicit Bridge(QObject* parent = nullptr);
     ~Bridge();
 
     static Bridge* getBridge();
     static void initBridge();
+    static Architecture* getArchitecture();
 
     // Message processing function
     void* processMessage(GUIMSG type, void* param1, void* param2);
@@ -39,25 +54,29 @@ public:
     void setDbgStopped();
 
     //Public variables
-    void* winId = nullptr;
-    ReferenceManager* referenceManager = nullptr;
+    void* mWinId = nullptr;
+    ReferenceManager* mReferenceManager = nullptr;
     bool mIsRunning = false;
     duint mLastCip = 0;
-    SymbolView* symbolView = nullptr;
-    bool loggingEnabled = true;
+    SymbolView* mSymbolView = nullptr;
+    bool mLoggingEnabled = true;
 
 signals:
-    void disassembleAt(dsint va, dsint eip);
+    void disassembleAt(duint va, duint eip);
     void updateDisassembly();
     void dbgStateChanged(DBGSTATE state);
     void addMsgToLog(QByteArray msg);
     void addMsgToLogHtml(QByteArray msg);
     void clearLog();
-    void shutdown();
+    void saveLog();
+    void saveLogToFile(QString file);
+    void redirectLogStop();
+    void redirectLogToFile(QString filename);
+    void close();
     void updateRegisters();
     void updateBreakpoints();
     void updateWindowTitle(QString filename);
-    void dumpAt(dsint va);
+    void dumpAt(duint va);
     void scriptAdd(int count, const char** lines);
     void scriptClear();
     void scriptSetIp(int line);
@@ -72,7 +91,7 @@ signals:
     void clearSymbolLog();
     void setSymbolProgress(int progress);
     void referenceAddColumnAt(int width, QString title);
-    void referenceSetRowCount(dsint count);
+    void referenceSetRowCount(duint count);
     void referenceSetCellContent(int r, int c, QString s);
     void referenceAddCommand(QString title, QString command);
     void referenceReloadData();
@@ -109,7 +128,10 @@ signals:
     void selectionStackSet(const SELECTIONDATA* selection);
     void selectionGraphGet(SELECTIONDATA* selection);
     void selectionMemmapGet(SELECTIONDATA* selection);
+    void selectionMemmapSet(const SELECTIONDATA* selection);
     void selectionSymmodGet(SELECTIONDATA* selection);
+    void selectionThreadsGet(SELECTIONDATA* selection);
+    void selectionThreadsSet(const SELECTIONDATA* selection);
     void getStrWindow(const QString title, QString* text);
     void autoCompleteAddCmd(const QString cmd);
     void autoCompleteDelCmd(const QString cmd);
@@ -124,6 +146,7 @@ signals:
     void symbolRefreshCurrent();
     void loadSourceFile(const QString path, duint addr);
     void showCpu();
+    void showThreads();
     void addQWidgetTab(QWidget* qWidget);
     void showQWidgetTab(QWidget* qWidget);
     void closeQWidgetTab(QWidget* qWidget);
@@ -142,6 +165,7 @@ signals:
     void focusStack();
     void focusGraph();
     void focusMemmap();
+    void focusSymmod();
     void updateWatch();
     void loadGraph(BridgeCFGraphList* graph, duint addr);
     void graphAt(duint addr);
@@ -166,11 +190,14 @@ signals:
     void showReferences();
     void gotoTraceIndex(duint index);
     void showTraceBrowser();
+    void throttleUpdate(GUIMSG msg);
 
 private:
-    CRITICAL_SECTION csBridge;
-    HANDLE resultEvents[BridgeResult::Last];
-    duint bridgeResults[BridgeResult::Last];
-    DWORD dwMainThreadId = 0;
-    volatile bool dbgStopped = false;
+    CRITICAL_SECTION mCsBridge;
+    HANDLE mResultEvents[BridgeResult::Last];
+    duint mBridgeResults[BridgeResult::Last];
+    DWORD mMainThreadId = 0;
+    volatile bool mDbgStopped = false;
+    QMap<GUIMSG, DWORD> mLastUpdates;
+    QMap<GUIMSG, QTimer*> mUpdateTimers;
 };

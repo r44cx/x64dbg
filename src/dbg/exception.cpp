@@ -13,6 +13,7 @@ static std::unordered_map<unsigned int, String> NtStatusNames;
 static std::unordered_map<unsigned int, String> ErrorNames;
 static std::unordered_map<String, unsigned int> Constants;
 static std::unordered_map<unsigned int, String> SyscallIndices;
+static std::unordered_map<String, unsigned int> SyscallNames;
 
 static bool UniversalCodeInit(const String & file, std::unordered_map<unsigned int, String> & names, unsigned char radix)
 {
@@ -57,6 +58,7 @@ bool ConstantCodeInit(const String & constantFile)
     std::unordered_map<unsigned int, String> names;
     if(!UniversalCodeInit(constantFile, names, 0))
         return false;
+    Constants.reserve(names.size());
     for(const auto & it : names)
         Constants.insert({ it.second, it.first });
     return true;
@@ -244,6 +246,7 @@ bool SyscallInit()
     }
     else
     {
+        SyscallIndices.reserve(sizeof(Win32kSyscalls) / sizeof(Win32kSyscalls[0]));
         for(auto & syscall : Win32kSyscalls)
         {
             auto index = syscall.GetSyscallIndex((USHORT)versionInfo.dwBuildNumber, ArchValue(true, false));
@@ -251,12 +254,43 @@ bool SyscallInit()
                 SyscallIndices.insert({ index, syscall.Name });
         }
     }
-    ModClear(false);
+
+    // Populate the name map
+    for(const auto & itr : SyscallIndices)
+    {
+        SyscallNames.emplace(itr.second, itr.first);
+    }
+
+    // Also allow lookup with only the least significant 14 bits
+    // Reference: https://alice.climent-pommeret.red/posts/a-syscall-journey-in-the-windows-kernel/
+    for(const auto & itr : SyscallIndices)
+    {
+        auto truncated = itr.first & 0x3FFF;
+        if(truncated != itr.first)
+        {
+            SyscallIndices.emplace(truncated, itr.second);
+        }
+    }
+
+    // Clear the GUI
+    ModClear(true);
+
     return result;
 }
 
 const String & SyscallToName(unsigned int index)
 {
-    auto found = SyscallIndices.find(index);
+    auto found = SyscallIndices.find(index & 0x3FFF);
     return found != SyscallIndices.end() ? found->second : emptyString;
+}
+
+unsigned int SyscallToId(const String & name)
+{
+    if(name.find("Zw") == 0)
+    {
+        return SyscallToId("Nt" + name.substr(2));
+    }
+
+    auto found = SyscallNames.find(name);
+    return found != SyscallNames.end() ? found->second : -1;
 }

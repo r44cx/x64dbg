@@ -4,20 +4,16 @@
 #include <QThread>
 #include "MiscUtil.h"
 #include "StringUtil.h"
+#include <sysinfoapi.h>
 
 TraceFileReader::TraceFileReader(QObject* parent) : QObject(parent)
 {
-    length = 0;
     progress = 0;
-    error = true;
-    parser = nullptr;
-    lastAccessedPage = nullptr;
-    lastAccessedIndexOffset = 0;
-    hashValue = 0;
     EXEPath.clear();
 
     int maxModuleSize = (int)ConfigUint("Disassembler", "MaxModuleSize");
-    mDisasm = new QBeaEngine(maxModuleSize);
+    // TODO: refactor this to come from the parent TraceWidget
+    mDisasm = new QZydis(maxModuleSize, Bridge::getArchitecture());
     connect(Config(), SIGNAL(tokenizerConfigUpdated()), this, SLOT(tokenizerUpdatedSlot()));
     connect(Config(), SIGNAL(colorsUpdated()), this, SLOT(tokenizerUpdatedSlot()));
 }
@@ -35,10 +31,12 @@ bool TraceFileReader::Open(const QString & fileName)
         parser->wait();
     }
     error = true;
+    dump.clear();
     traceFile.setFileName(fileName);
     traceFile.open(QFile::ReadOnly);
     if(traceFile.isReadable())
     {
+        fileSize = traceFile.size();
         parser = new TraceFileParser(this);
         connect(parser, SIGNAL(finished()), this, SLOT(parseFinishedSlot()));
         progress.store(0);
@@ -48,6 +46,7 @@ bool TraceFileReader::Open(const QString & fileName)
     }
     else
     {
+        fileSize = 0;
         progress.store(0);
         emit parseFinished();
         return false;
@@ -69,6 +68,7 @@ void TraceFileReader::Close()
     hashValue = 0;
     EXEPath.clear();
     error = false;
+    errorMessage.clear();
 }
 
 bool TraceFileReader::Delete()
@@ -85,6 +85,7 @@ bool TraceFileReader::Delete()
     hashValue = 0;
     EXEPath.clear();
     error = false;
+    errorMessage.clear();
     return value;
 }
 
@@ -96,6 +97,8 @@ void TraceFileReader::parseFinishedSlot()
         progress.store(0);
     delete parser;
     parser = nullptr;
+    if(Length() > 0 && getDump()->isEnabled())
+        buildDump(0); // initialize dump with first instruction
     emit parseFinished();
 
     //for(auto i : fileIndex)
@@ -103,24 +106,37 @@ void TraceFileReader::parseFinishedSlot()
 }
 
 // Return if the file read was error
-bool TraceFileReader::isError() const
+bool TraceFileReader::isError(QString & reason) const
 {
+    if(error)
+        reason = errorMessage;
     return error;
 }
 
 // Return 100 when loading is completed
-int TraceFileReader::Progress() const
-{
-    return progress.load();
-}
+// TODO: Trace view should start showing its first instructions as soon as they are loaded
+//int TraceFileReader::Progress() const
+//{
+//    return progress.load();
+//}
 
 // Return the count of instructions
-unsigned long long TraceFileReader::Length() const
+TRACEINDEX TraceFileReader::Length() const
 {
     return length;
 }
 
-QString TraceFileReader::getIndexText(unsigned long long index) const
+uint64_t TraceFileReader::FileSize() const
+{
+    return fileSize;
+}
+
+TraceFileDump* TraceFileReader::getDump()
+{
+    return &dump;
+}
+
+QString TraceFileReader::getIndexText(TRACEINDEX index) const
 {
     QString indexString;
     indexString = QString::number(index, 16).toUpper();
@@ -149,25 +165,41 @@ const QString & TraceFileReader::ExePath() const
     return EXEPath;
 }
 
-// Return the registers context at a given index
-REGDUMP TraceFileReader::Registers(unsigned long long index)
+QString TraceFileReader::FileName() const
 {
-    unsigned long long base;
+    return QDir::toNativeSeparators(traceFile.fileName());
+}
+
+// Return the registers context at a given index
+REGDUMP TraceFileReader::Registers(TRACEINDEX index)
+{
+    TRACEINDEX base;
     TraceFilePage* page = getPage(index, &base);
-    if(page == nullptr)
+    if(page != nullptr)
+        return page->Registers(index - base);
+    else
     {
         REGDUMP registers;
         memset(&registers, 0, sizeof(registers));
         return registers;
     }
+}
+
+// Return the registers context at a given index
+duint TraceFileReader::Address(TRACEINDEX index)
+{
+    TRACEINDEX base;
+    TraceFilePage* page = getPage(index, &base);
+    if(page == nullptr)
+        return 0;
     else
-        return page->Registers(index - base);
+        return page->Address(index - base);
 }
 
 // Return the opcode at a given index. buffer must be 16 bytes long.
-void TraceFileReader::OpCode(unsigned long long index, unsigned char* buffer, int* opcodeSize)
+void TraceFileReader::OpCode(TRACEINDEX index, unsigned char* buffer, int* opcodeSize)
 {
-    unsigned long long base;
+    TRACEINDEX base;
     TraceFilePage* page = getPage(index, &base);
     if(page == nullptr)
     {
@@ -180,18 +212,18 @@ void TraceFileReader::OpCode(unsigned long long index, unsigned char* buffer, in
 }
 
 // Return the disassembled instruction at a given index.
-const Instruction_t & TraceFileReader::Instruction(unsigned long long index)
+const Instruction_t & TraceFileReader::Instruction(TRACEINDEX index)
 {
-    unsigned long long base;
+    TRACEINDEX base;
     TraceFilePage* page = getPage(index, &base);
     // The caller must guarantee page is not null, most likely they have already called some other getters.
     return page->Instruction(index - base, *mDisasm);
 }
 
 // Return the thread id at a given index
-DWORD TraceFileReader::ThreadId(unsigned long long index)
+DWORD TraceFileReader::ThreadId(TRACEINDEX index)
 {
-    unsigned long long base;
+    TRACEINDEX base;
     TraceFilePage* page = getPage(index, &base);
     if(page == nullptr)
         return 0;
@@ -200,9 +232,9 @@ DWORD TraceFileReader::ThreadId(unsigned long long index)
 }
 
 // Return the number of recorded memory accesses at a given index
-int TraceFileReader::MemoryAccessCount(unsigned long long index)
+int TraceFileReader::MemoryAccessCount(TRACEINDEX index)
 {
-    unsigned long long base;
+    TRACEINDEX base;
     TraceFilePage* page = getPage(index, &base);
     if(page == nullptr)
         return 0;
@@ -211,9 +243,9 @@ int TraceFileReader::MemoryAccessCount(unsigned long long index)
 }
 
 // Return the memory access info at a given index
-void TraceFileReader::MemoryAccessInfo(unsigned long long index, duint* address, duint* oldMemory, duint* newMemory, bool* isValid)
+void TraceFileReader::MemoryAccessInfo(TRACEINDEX index, duint* address, duint* oldMemory, duint* newMemory, bool* isValid)
 {
-    unsigned long long base;
+    TRACEINDEX base;
     TraceFilePage* page = getPage(index, &base);
     if(page == nullptr)
         return;
@@ -221,8 +253,31 @@ void TraceFileReader::MemoryAccessInfo(unsigned long long index, duint* address,
         return page->MemoryAccessInfo(index - base, address, oldMemory, newMemory, isValid);
 }
 
+static size_t getMaxCachedPages()
+{
+#ifdef _WIN64
+    MEMORYSTATUSEX meminfo;
+    memset(&meminfo, 0, sizeof(meminfo));
+    meminfo.dwLength = sizeof(meminfo);
+    if(GlobalMemoryStatusEx(&meminfo))
+    {
+        meminfo.ullAvailPhys >>= 20;
+        if(meminfo.ullAvailPhys >= 4096) // more than 4GB free memory!
+            return 2048;
+        else if(meminfo.ullAvailPhys <= 1024) // less than 1GB free memory!
+            return 100;
+        else
+            return 512;
+    } // GlobalMemoryStatusEx failed?
+    else
+        return 100;
+#else //x86
+    return 100;
+#endif
+}
+
 // Used internally to get the page for the given index and read from disk if necessary
-TraceFilePage* TraceFileReader::getPage(unsigned long long index, unsigned long long* base)
+TraceFilePage* TraceFileReader::getPage(TRACEINDEX index, TRACEINDEX* base)
 {
     // Try to access the most recently used page
     if(lastAccessedPage)
@@ -251,7 +306,8 @@ TraceFilePage* TraceFileReader::getPage(unsigned long long index, unsigned long 
     else if(index >= Length()) //Out of bound
         return nullptr;
     // Remove an oldest page from system memory to make room for a new one.
-    if(pages.size() >= 2048) //TODO: trim resident pages based on system memory usage, instead of a hard limit.
+    size_t maxPages = getMaxCachedPages();
+    while(pages.size() >= maxPages)
     {
         FILETIME pageOutTime = pages.begin()->second.lastAccessed;
         Range pageOutIndex = pages.begin()->first;
@@ -382,9 +438,9 @@ void TraceFileParser::readFileHeader(TraceFileReader* that)
                 {
                     a = a.mid(2);
 #ifdef _WIN64
-                    that->hashValue = a.toLongLong(&ok, 16);
+                    that->hashValue = a.toULongLong(&ok, 16);
 #else //x86
-                    that->hashValue = a.toLong(&ok, 16);
+                    that->hashValue = a.toULong(&ok, 16);
 #endif //_WIN64
                     if(!ok)
                         that->hashValue = 0;
@@ -410,12 +466,11 @@ static bool readBlock(QFile & traceFile)
         throw std::wstring(L"Read block type failed");
     if(blockType == 0)
     {
-
         if(traceFile.read((char*)&changedCountFlags, 3) != 3)
             throw std::wstring(L"Read flags failed");
         //skipping: thread id, registers
         if(traceFile.seek(traceFile.pos() + ((changedCountFlags[2] & 0x80) ? 4 : 0) + (changedCountFlags[2] & 0x0F) + changedCountFlags[0] * (1 + sizeof(duint))) == false)
-            throw std::wstring(L"Unspecified");
+            throw std::wstring(L"Seek failed");
         QByteArray memflags;
         memflags = traceFile.read(changedCountFlags[1]);
         if(memflags.length() < changedCountFlags[1])
@@ -424,7 +479,7 @@ static bool readBlock(QFile & traceFile)
         for(unsigned char i = 0; i < changedCountFlags[1]; i++)
             skipOffset += ((memflags[i] & 1) == 1) ? 2 : 3;
         if(traceFile.seek(traceFile.pos() + skipOffset * sizeof(duint)) == false)
-            throw std::wstring(L"Unspecified");
+            throw std::wstring(L"Seek failed");
         //Gathered information, build index
         if(changedCountFlags[0] == (FIELD_OFFSET(REGDUMP, lastError) + sizeof(DWORD)) / sizeof(duint))
             return true;
@@ -439,20 +494,21 @@ static bool readBlock(QFile & traceFile)
 void TraceFileParser::run()
 {
     TraceFileReader* that = dynamic_cast<TraceFileReader*>(parent());
-    unsigned long long index = 0;
-    unsigned long long lastIndex = 0;
+    TRACEINDEX index = 0;
+    TRACEINDEX lastIndex = 0;
     if(that == NULL)
     {
         return; //Error
     }
     try
     {
-        if(that->traceFile.size() == 0)
+        auto filesize = that->traceFile.size();
+        if(filesize == 0)
             throw std::wstring(L"File is empty");
         //Process file header
         readFileHeader(that);
         //Update progress
-        that->progress.store(that->traceFile.pos() * 100 / that->traceFile.size());
+        that->progress.store(that->traceFile.pos() * 100 / filesize);
         //Process file content
         while(!that->traceFile.atEnd())
         {
@@ -465,7 +521,7 @@ void TraceFileParser::run()
                 that->fileIndex.push_back(std::make_pair(index, TraceFileReader::Range(blockStart, 0)));
                 lastIndex = index + 1;
                 //Update progress
-                that->progress.store(that->traceFile.pos() * 100 / that->traceFile.size());
+                that->progress.store(that->traceFile.pos() * 100 / filesize);
                 if(that->progress == 100)
                     that->progress = 99;
                 if(this->isInterruptionRequested() && !that->traceFile.atEnd()) //Cancel loading
@@ -476,18 +532,19 @@ void TraceFileParser::run()
         if(index > 0)
             that->fileIndex.back().second.second = index - (lastIndex - 1);
         that->error = false;
+        that->errorMessage.clear();
         that->length = index;
         that->progress = 100;
     }
     catch(const std::wstring & errReason)
     {
-        Q_UNUSED(errReason);
-        //MessageBox(0, errReason.c_str(), L"debug", MB_ICONERROR);
         that->error = true;
+        that->errorMessage = "[TraceFileParser::run] " + QString::fromStdWString(errReason);
     }
     catch(std::bad_alloc &)
     {
         that->error = true;
+        that->errorMessage = "[TraceFileParser::run] std::bad_alloc";
     }
 
     that->traceFile.moveToThread(that->thread());
@@ -496,9 +553,10 @@ void TraceFileParser::run()
 // Remove last page from memory and read from disk again to show updates
 void TraceFileReader::purgeLastPage()
 {
-    unsigned long long index = 0;
-    unsigned long long lastIndex = 0;
+    TRACEINDEX index = 0;
+    TRACEINDEX lastIndex = 0;
     bool isBlockExist = false;
+    const bool previousEmpty = Length() == 0;
     if(length > 0)
     {
         index = fileIndex.back().first;
@@ -535,17 +593,158 @@ void TraceFileReader::purgeLastPage()
         if(isBlockExist)
             fileIndex.back().second.second = index - (lastIndex - 1);
         error = false;
+        errorMessage.clear();
         length = index;
+        if(previousEmpty && length > 0 && getDump()->isEnabled())
+            buildDump(0); // Initialize dump
     }
     catch(std::wstring & errReason)
     {
-        Q_UNUSED(errReason);
         error = true;
+        errorMessage = "[TraceFileReader::purgeLastPage] " + QString::fromStdWString(errReason);
+    }
+    catch(std::bad_alloc &)
+    {
+        error = true;
+        errorMessage = "[TraceFileReader::purgeLastPage] std::bad_alloc";
     }
 }
 
+// Extract memory access information of given index into dump object
+void TraceFileReader::buildDump(TRACEINDEX index)
+{
+    try
+    {
+        unsigned char opcode[MAX_DISASM_BUFFER];
+        int opcodeSize;
+        duint cip = Address(index);;
+        OpCode(index, opcode, &opcodeSize);
+        int MemoryOperandsCount = MemoryAccessCount(index);
+        // Method 1
+        // TODO: This doesn't get correct memory operand size
+        duint oldMemory[32];
+        duint newMemory[32];
+        duint address[32];
+        bool isValid[32];
+        if(MemoryOperandsCount > 0) //LEA and NOP instructions are ignored here
+        {
+            MemoryAccessInfo(index, address, oldMemory, newMemory, isValid);
+        }
+        dump.addMemAccess(cip, opcode, opcodeSize, address, oldMemory, newMemory, MemoryOperandsCount);
+        //for(int i = 0; i < MemoryOperandsCount; i++)
+        //{
+        //    dump.addMemAccess(address[i], &oldMemory[i], &newMemory[i], sizeof(duint));
+        //}
+        // Method 2
+        /*
+        // TODO: This works poorly for edge cases, still doesn't work with PUSH DWORD PTR FS:[ESP+EAX]
+        Zydis zydis;
+        zydis.Disassemble(registers.regcontext.cip, opcode, opcodeSize);
+        //bool used[32];
+        //memset(used, 0, sizeof(used));
+        // fix PUSH DWORD PTR [ESP] uses different ESP values
+        if(zydis.GetInstr()->mnemonic == ZYDIS_MNEMONIC_PUSH) // fix PUSH instructions, add explicit memory operand
+        {
+            const auto & operand = zydis[0];
+            if(operand.type == ZYDIS_OPERAND_TYPE_MEMORY)
+            {
+                int size;
+                size = ceil((float)operand.size / 8.0f);
+                size_t value = zydis.ResolveOpValue(0, [&registers](ZydisRegister reg)
+                {
+                    return resolveZydisRegister(registers, reg);
+                });
+                bool found = false;
+                for(int i = 0; i < MemoryOperandsCount; i++)
+                {
+                    // TODO: fix up FS/GS segment
+                    if(address[i] != value)
+                        continue;
+                    dump.addMemAccess(address[i], &oldMemory[i], &newMemory[i], size);
+                    found = true;
+                    break;
+                }
+                //if(!found)
+                //bug???
+                //GuiAddLogMessage(QString("buildDump bug %1???\n").arg(index).toUtf8().constData());
+            }
+        }
+        // fix PUSH instructions, add implicit memory operand
+        if(zydis.GetInstr()->mnemonic == ZYDIS_MNEMONIC_PUSH ||zydis.GetInstr()->mnemonic == ZYDIS_MNEMONIC_PUSHF || zydis.GetInstr()->mnemonic == ZYDIS_MNEMONIC_PUSHFD || zydis.GetInstr()->mnemonic == ZYDIS_MNEMONIC_PUSHFQ)
+        {
+            size_t new_csp = registers.regcontext.csp - sizeof(duint);
+            bool found = false;
+            for(int i = 0; i < MemoryOperandsCount; i++)
+            {
+                if(address[i] != new_csp)
+                    continue;
+                dump.addMemAccess(address[i], &oldMemory[i], &newMemory[i], sizeof(duint));
+                found = true;
+                break;
+            }
+            //if(!found)
+            //bug???
+            //GuiAddLogMessage(QString("buildDump bug %1???\n").arg(index).toUtf8().constData());
+        }
+        else
+        {
+            for(int opindex = 0; opindex < zydis.GetInstr()->operandCount; opindex++)
+            {
+                const auto & operand = zydis.GetInstr()->operands[opindex];
+                if(operand.type == ZYDIS_OPERAND_TYPE_MEMORY)
+                {
+                    int size;
+                    size = ceil((float)operand.size / 8.0f);
+                    size_t value = zydis.ResolveOpValue(opindex, [&registers](ZydisRegister reg)
+                    {
+                        return resolveZydisRegister(registers, reg);
+                    });
+                    bool found = false;
+                    for(int i = 0; i < MemoryOperandsCount; i++)
+                    {
+                        // TODO: fix up FS/GS segment
+                        if(address[i] != value)
+                            continue;
+                        dump.addMemAccess(address[i], &oldMemory[i], &newMemory[i], size);
+                        found = true;
+                        break;
+                    }
+                    //if(!found)
+                    //bug???
+                    //GuiAddLogMessage(QString("buildDump bug %1???\n").arg(index).toUtf8().constData());
+                }
+            }
+        }
+        */
+    }
+    catch(std::bad_alloc &)
+    {
+        error = true;
+        errorMessage = "[TraceFileReader::buildDump] std::bad_alloc";
+        dump.clear(); // There's no enough memory, so we free up some memory
+    }
+}
+
+// Build dump index to the given index
+void TraceFileReader::buildDumpTo(TRACEINDEX index)
+{
+    auto start = dump.getMaxIndex(); // Don't re-add existing dump
+    if(start == 0) // maxIndex=0, trace dump is just enabled
+        buildDump(0);
+    for(auto i = start + 1; i <= index; i++)
+    {
+        dump.increaseIndex();
+        buildDump(i);
+    }
+}
+
+std::vector<TRACEINDEX> TraceFileReader::getReferences(duint startAddr, duint endAddr) const
+{
+    return dump.getReferences(startAddr, endAddr);
+}
+
 //TraceFilePage
-TraceFilePage::TraceFilePage(TraceFileReader* parent, unsigned long long fileOffset, unsigned long long maxLength)
+TraceFilePage::TraceFilePage(TraceFileReader* parent, unsigned long long fileOffset, TRACEINDEX maxLength)
 {
     DWORD lastThreadId = 0;
     union
@@ -558,7 +757,7 @@ TraceFilePage::TraceFilePage(TraceFileReader* parent, unsigned long long fileOff
     duint memAddress[MAX_MEMORY_OPERANDS];
     duint memOldContent[MAX_MEMORY_OPERANDS];
     duint memNewContent[MAX_MEMORY_OPERANDS];
-    size_t memOperandOffset = 0;
+    uint32_t memOperandOffset = 0;
     mParent = parent;
     length = 0;
     GetSystemTimes(nullptr, nullptr, &lastAccessed); //system user time, no GetTickCount64() for XP compatibility.
@@ -566,19 +765,19 @@ TraceFilePage::TraceFilePage(TraceFileReader* parent, unsigned long long fileOff
     try
     {
         if(mParent->traceFile.seek(fileOffset) == false)
-            throw std::exception();
+            throw std::exception("Failed to seek to offset");
         //Process file content
         while(!mParent->traceFile.atEnd() && length < maxLength)
         {
             if(!mParent->traceFile.isReadable())
-                throw std::exception();
+                throw std::exception("Trace file not readable");
             unsigned char blockType;
             unsigned char changedCountFlags[3]; //reg changed count, mem accessed count, flags
             mParent->traceFile.read((char*)&blockType, 1);
             if(blockType == 0)
             {
                 if(mParent->traceFile.read((char*)&changedCountFlags, 3) != 3)
-                    throw std::exception();
+                    throw std::exception("Failed to read 3 bytes (truncated?)");
                 if(changedCountFlags[2] & 0x80) //Thread Id
                     mParent->traceFile.read((char*)&lastThreadId, 4);
                 threadId.push_back(lastThreadId);
@@ -586,33 +785,29 @@ TraceFilePage::TraceFilePage(TraceFileReader* parent, unsigned long long fileOff
                 {
                     QByteArray opcode = mParent->traceFile.read(changedCountFlags[2] & 0x0F);
                     if(opcode.isEmpty())
-                        throw std::exception();
+                        throw std::exception("Failed to read opcode");
                     opcodeOffset.push_back(opcodes.size());
                     opcodeSize.push_back(opcode.size());
                     opcodes.append(opcode);
                 }
                 else
-                    throw std::exception();
+                    throw std::exception("No opcode");
                 if(changedCountFlags[0] > 0) //registers
                 {
                     int lastPosition = -1;
                     if(changedCountFlags[0] > _countof(regwords)) //Bad count?
-                        throw std::exception();
+                        throw std::exception("Bad count");
                     if(mParent->traceFile.read((char*)changed, changedCountFlags[0]) != changedCountFlags[0])
-                        throw std::exception();
+                        throw std::exception("Could not read changed regs");
                     if(mParent->traceFile.read((char*)regContent, changedCountFlags[0] * sizeof(duint)) != changedCountFlags[0] * sizeof(duint))
-                    {
-                        throw std::exception();
-                    }
+                        throw std::exception("Could not read changed content");
                     for(int i = 0; i < changedCountFlags[0]; i++)
                     {
                         lastPosition = lastPosition + changed[i] + 1;
                         if(lastPosition < _countof(regwords) && lastPosition >= 0)
                             regwords[lastPosition] = regContent[i];
                         else //out of bounds?
-                        {
-                            throw std::exception();
-                        }
+                            throw std::exception("Changes out of bounds?");
                     }
                     mRegisters.push_back(registers);
                 }
@@ -620,22 +815,22 @@ TraceFilePage::TraceFilePage(TraceFileReader* parent, unsigned long long fileOff
                 {
                     QByteArray memflags;
                     if(changedCountFlags[1] > _countof(memAddress)) //too many memory operands?
-                        throw std::exception();
+                        throw std::exception("Too many memory operands?");
                     memflags = mParent->traceFile.read(changedCountFlags[1]);
                     if(memflags.length() < changedCountFlags[1])
-                        throw std::exception();
+                        throw std::exception("Memory operand count mismatch");
                     memoryOperandOffset.push_back(memOperandOffset);
                     memOperandOffset += changedCountFlags[1];
                     if(mParent->traceFile.read((char*)memAddress, sizeof(duint) * changedCountFlags[1]) != sizeof(duint) * changedCountFlags[1])
-                        throw std::exception();
+                        throw std::exception("Failed to read memory change addresses");
                     if(mParent->traceFile.read((char*)memOldContent, sizeof(duint) * changedCountFlags[1]) != sizeof(duint) * changedCountFlags[1])
-                        throw std::exception();
+                        throw std::exception("Failed to read memory change content");
                     for(unsigned char i = 0; i < changedCountFlags[1]; i++)
                     {
                         if((memflags[i] & 1) == 0)
                         {
                             if(mParent->traceFile.read((char*)&memNewContent[i], sizeof(duint)) != sizeof(duint))
-                                throw std::exception();
+                                throw std::exception("Failed to read memory content");
                         }
                         else
                             memNewContent[i] = memOldContent[i];
@@ -653,38 +848,43 @@ TraceFilePage::TraceFilePage(TraceFileReader* parent, unsigned long long fileOff
                 length++;
             }
             else
-                throw std::exception();
+                throw std::exception("Unexpected block type");
         }
-
     }
-    catch(const std::exception &)
+    catch(const std::exception & x)
     {
         mParent->error = true;
+        mParent->errorMessage = QString("[TraceFilePage::TraceFilePage] %1").arg(x.what());
     }
 }
 
-unsigned long long TraceFilePage::Length() const
+TRACEINDEX TraceFilePage::Length() const
 {
     return length;
 }
 
-const REGDUMP & TraceFilePage::Registers(unsigned long long index) const
+const REGDUMP & TraceFilePage::Registers(TRACEINDEX index) const
 {
     return mRegisters.at(index);
 }
 
-void TraceFilePage::OpCode(unsigned long long index, unsigned char* buffer, int* opcodeSize) const
+const duint TraceFilePage::Address(TRACEINDEX index) const
+{
+    return mRegisters.at(index).regcontext.cip;
+}
+
+void TraceFilePage::OpCode(TRACEINDEX index, unsigned char* buffer, int* opcodeSize) const
 {
     *opcodeSize = this->opcodeSize.at(index);
     memcpy(buffer, opcodes.constData() + opcodeOffset.at(index), *opcodeSize);
 }
 
-const Instruction_t & TraceFilePage::Instruction(unsigned long long index, QBeaEngine & mDisasm)
+const Instruction_t & TraceFilePage::Instruction(TRACEINDEX index, QZydis & mDisasm)
 {
     if(instructions.size() == 0)
     {
         instructions.reserve(length);
-        for(unsigned long long i = 0; i < length; i++)
+        for(TRACEINDEX i = 0; i < length; i++)
         {
             instructions.emplace_back(mDisasm.DisassembleAt((const byte_t*)opcodes.constData() + opcodeOffset.at(i), opcodeSize.at(i), 0, Registers(i).regcontext.cip, false));
         }
@@ -692,12 +892,12 @@ const Instruction_t & TraceFilePage::Instruction(unsigned long long index, QBeaE
     return instructions.at(index);
 }
 
-DWORD TraceFilePage::ThreadId(unsigned long long index) const
+DWORD TraceFilePage::ThreadId(TRACEINDEX index) const
 {
     return threadId.at(index);
 }
 
-int TraceFilePage::MemoryAccessCount(unsigned long long index) const
+int TraceFilePage::MemoryAccessCount(TRACEINDEX index) const
 {
     size_t a = memoryOperandOffset.at(index);
     if(index == length - 1)
@@ -706,7 +906,7 @@ int TraceFilePage::MemoryAccessCount(unsigned long long index) const
         return (int)(memoryOperandOffset.at(index + 1) - a);
 }
 
-void TraceFilePage::MemoryAccessInfo(unsigned long long index, duint* address, duint* oldMemory, duint* newMemory, bool* isValid) const
+void TraceFilePage::MemoryAccessInfo(TRACEINDEX index, duint* address, duint* oldMemory, duint* newMemory, bool* isValid) const
 {
     auto count = MemoryAccessCount(index);
     auto base = memoryOperandOffset.at(index);
@@ -715,11 +915,145 @@ void TraceFilePage::MemoryAccessInfo(unsigned long long index, duint* address, d
         address[i] = memoryAddress.at(base + i);
         oldMemory[i] = this->oldMemory.at(base + i);
         newMemory[i] = this->newMemory.at(base + i);
-        isValid[i] = true; // proposed flag
+        isValid[i] = true; // TODO: proposed flag
     }
 }
 
 void TraceFilePage::updateInstructions()
 {
+    // Just clear them, they will be updated when accessed
     instructions.clear();
 }
+
+duint resolveZydisRegister(const REGDUMP & registers, ZydisRegister regname)
+{
+    switch(regname)
+    {
+#ifdef _WIN64
+    case ZYDIS_REGISTER_RAX:
+        return registers.regcontext.cax;
+    case ZYDIS_REGISTER_RCX:
+        return registers.regcontext.ccx;
+    case ZYDIS_REGISTER_RDX:
+        return registers.regcontext.cdx;
+    case ZYDIS_REGISTER_RBX:
+        return registers.regcontext.cbx;
+    case ZYDIS_REGISTER_RSP:
+        return registers.regcontext.csp;
+    case ZYDIS_REGISTER_RBP:
+        return registers.regcontext.cbp;
+    case ZYDIS_REGISTER_RSI:
+        return registers.regcontext.csi;
+    case ZYDIS_REGISTER_RDI:
+        return registers.regcontext.cdi;
+    case ZYDIS_REGISTER_R8:
+        return registers.regcontext.r8;
+    case ZYDIS_REGISTER_R9:
+        return registers.regcontext.r9;
+    case ZYDIS_REGISTER_R10:
+        return registers.regcontext.r10;
+    case ZYDIS_REGISTER_R11:
+        return registers.regcontext.r11;
+    case ZYDIS_REGISTER_R12:
+        return registers.regcontext.r12;
+    case ZYDIS_REGISTER_R13:
+        return registers.regcontext.r13;
+    case ZYDIS_REGISTER_R14:
+        return registers.regcontext.r14;
+    case ZYDIS_REGISTER_R15:
+        return registers.regcontext.r15;
+    case ZYDIS_REGISTER_R8D:
+        return registers.regcontext.r8 & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_R9D:
+        return registers.regcontext.r9 & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_R10D:
+        return registers.regcontext.r10 & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_R11D:
+        return registers.regcontext.r11 & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_R12D:
+        return registers.regcontext.r12 & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_R13D:
+        return registers.regcontext.r13 & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_R15D:
+        return registers.regcontext.r15 & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_R8W:
+        return registers.regcontext.r8 & 0xFFFF;
+    case ZYDIS_REGISTER_R9W:
+        return registers.regcontext.r9 & 0xFFFF;
+    case ZYDIS_REGISTER_R10W:
+        return registers.regcontext.r10 & 0xFFFF;
+    case ZYDIS_REGISTER_R11W:
+        return registers.regcontext.r11 & 0xFFFF;
+    case ZYDIS_REGISTER_R12W:
+        return registers.regcontext.r12 & 0xFFFF;
+    case ZYDIS_REGISTER_R13W:
+        return registers.regcontext.r13 & 0xFFFF;
+    case ZYDIS_REGISTER_R15W:
+        return registers.regcontext.r15 & 0xFFFF;
+    case ZYDIS_REGISTER_R8B:
+        return registers.regcontext.r8 & 0xFF;
+    case ZYDIS_REGISTER_R9B:
+        return registers.regcontext.r9 & 0xFF;
+    case ZYDIS_REGISTER_R10B:
+        return registers.regcontext.r10 & 0xFF;
+    case ZYDIS_REGISTER_R11B:
+        return registers.regcontext.r11 & 0xFF;
+    case ZYDIS_REGISTER_R12B:
+        return registers.regcontext.r12 & 0xFF;
+    case ZYDIS_REGISTER_R13B:
+        return registers.regcontext.r13 & 0xFF;
+    case ZYDIS_REGISTER_R15B:
+        return registers.regcontext.r15 & 0xFF;
+#endif //_WIN64
+    case ZYDIS_REGISTER_EAX:
+        return registers.regcontext.cax & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_ECX:
+        return registers.regcontext.ccx & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_EDX:
+        return registers.regcontext.cdx & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_EBX:
+        return registers.regcontext.cbx & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_ESP:
+        return registers.regcontext.csp & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_EBP:
+        return registers.regcontext.cbp & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_ESI:
+        return registers.regcontext.csi & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_EDI:
+        return registers.regcontext.cdi & 0xFFFFFFFF;
+    case ZYDIS_REGISTER_AX:
+        return registers.regcontext.cax & 0xFFFF;
+    case ZYDIS_REGISTER_CX:
+        return registers.regcontext.ccx & 0xFFFF;
+    case ZYDIS_REGISTER_DX:
+        return registers.regcontext.cdx & 0xFFFF;
+    case ZYDIS_REGISTER_BX:
+        return registers.regcontext.cbx & 0xFFFF;
+    case ZYDIS_REGISTER_SP:
+        return registers.regcontext.csp & 0xFFFF;
+    case ZYDIS_REGISTER_BP:
+        return registers.regcontext.cbp & 0xFFFF;
+    case ZYDIS_REGISTER_SI:
+        return registers.regcontext.csi & 0xFFFF;
+    case ZYDIS_REGISTER_DI:
+        return registers.regcontext.cdi & 0xFFFF;
+    case ZYDIS_REGISTER_AL:
+        return registers.regcontext.cax & 0xFF;
+    case ZYDIS_REGISTER_CL:
+        return registers.regcontext.ccx & 0xFF;
+    case ZYDIS_REGISTER_DL:
+        return registers.regcontext.cdx & 0xFF;
+    case ZYDIS_REGISTER_BL:
+        return registers.regcontext.cbx & 0xFF;
+    case ZYDIS_REGISTER_AH:
+        return (registers.regcontext.cax & 0xFF00) >> 8;
+    case ZYDIS_REGISTER_CH:
+        return (registers.regcontext.ccx & 0xFF00) >> 8;
+    case ZYDIS_REGISTER_DH:
+        return (registers.regcontext.cdx & 0xFF00) >> 8;
+    case ZYDIS_REGISTER_BH:
+        return (registers.regcontext.cbx & 0xFF00) >> 8;
+    default:
+        return static_cast<ULONG_PTR>(0);
+    }
+};

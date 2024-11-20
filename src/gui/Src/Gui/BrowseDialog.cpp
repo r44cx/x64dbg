@@ -28,22 +28,32 @@ BrowseDialog::BrowseDialog(QWidget* parent, const QString & title, const QString
     QCompleter* completer = new QCompleter(ui->lineEdit);
     completer->setModel(new QDirModel(completer));
     ui->lineEdit->setCompleter(completer);
-    Config()->setupWindowPos(this);
+    Config()->loadWindowGeometry(this);
 }
 
 BrowseDialog::~BrowseDialog()
 {
-    Config()->saveWindowPos(this);
+    Config()->saveWindowGeometry(this);
     delete ui;
+}
+
+void BrowseDialog::setConfirmOverwrite(bool value)
+{
+    mConfirmOverwrite = value;
 }
 
 void BrowseDialog::on_browse_clicked()
 {
     QString file;
     if(mSave)
-        file = QFileDialog::getSaveFileName(this, ui->label->text(), ui->lineEdit->text(), mFilter);
+    {
+        auto options = mConfirmOverwrite ? QFileDialog::Options() : QFileDialog::DontConfirmOverwrite;
+        file = QFileDialog::getSaveFileName(this, ui->label->text(), ui->lineEdit->text(), mFilter, nullptr, options);
+    }
     else
+    {
         file = QFileDialog::getOpenFileName(this, ui->label->text(), ui->lineEdit->text(), mFilter);
+    }
     if(file.size() != 0)
         ui->lineEdit->setText(QDir::toNativeSeparators(file));
 }

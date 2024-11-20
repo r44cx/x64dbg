@@ -21,6 +21,18 @@ ReferenceManager::ReferenceManager(QWidget* parent) : QTabWidget(parent)
 
 ReferenceView* ReferenceManager::currentReferenceView()
 {
+    //get the current index, disconnects the previous view if it's not the current one, set and connect the new current view, then return it
+    int currentIndex = QTabWidget::currentIndex();
+
+    if(mCurrentReferenceView && mCurrentReferenceView != widget(currentIndex))
+    {
+        mCurrentReferenceView->disconnectBridge();
+        mCurrentReferenceView = qobject_cast<ReferenceView*>(widget(currentIndex));
+
+        if(mCurrentReferenceView)
+            mCurrentReferenceView->connectBridge();
+    }
+
     return mCurrentReferenceView;
 }
 
@@ -38,13 +50,20 @@ void ReferenceManager::newReferenceView(QString name)
 
 void ReferenceManager::closeTab(int index)
 {
+    auto view = qobject_cast<ReferenceView*>(widget(index));
     removeTab(index);
+    if(mCurrentReferenceView == view)
+        mCurrentReferenceView = nullptr;
+    if(view)
+        delete view;
     if(count() <= 0)
         emit showCpu();
 }
 
 void ReferenceManager::closeAllTabs()
 {
-    clear();
-    emit showCpu();
+    while(count())
+    {
+        closeTab(0);
+    }
 }

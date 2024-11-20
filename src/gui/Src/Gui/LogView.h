@@ -8,7 +8,7 @@ class LogView : public QTextBrowser
 {
     Q_OBJECT
 public:
-    explicit LogView(QWidget* parent = 0);
+    explicit LogView(QWidget* parent = nullptr);
     ~LogView();
     void setupContextMenu();
     void contextMenuEvent(QContextMenuEvent* event) override;
@@ -21,7 +21,9 @@ public slots:
     void refreshShortcutsSlot();
     void updateStyle();
     void addMsgToLogSlot(QByteArray msg); /* Non-HTML Log Function*/
-    void addMsgToLogSlotHtml(QByteArray msg); /* HTML accepting Log Function */
+    void addMsgToLogHtmlSlot(QByteArray msg); /* HTML accepting Log Function */
+    void stopRedirectLogSlot();
+    void redirectLogToFileSlot(QString filename);
     void redirectLogSlot();
     void setLoggingEnabled(bool enabled);
     void autoScrollSlot();
@@ -35,6 +37,7 @@ public slots:
     void onAnchorClicked(const QUrl & link);
 
     void clearLogSlot();
+    void saveToFileSlot(QString filename);
     void saveSlot();
     void toggleLoggingSlot();
     void flushTimerSlot();

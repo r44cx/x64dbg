@@ -50,6 +50,29 @@ static bool cbClearLog(int argc, char* argv[])
     return true;
 }
 
+static bool cbSaveLog(int argc, char* argv[])
+{
+    if(argc < 2)
+        GuiLogSave(nullptr);
+    else
+        GuiLogSave(argv[1]);
+    return true;
+}
+
+static bool cbRedirectLog(int argc, char* argv[])
+{
+    if(IsArgumentsLessThan(argc, 2))
+        return false;
+    GuiLogRedirect(argv[1]);
+    return true;
+}
+
+static bool cbStopRedirectLog(int argc, char* argv[])
+{
+    GuiLogRedirectStop();
+    return true;
+}
+
 static bool cbPrintf(int argc, char* argv[])
 {
     if(argc < 2)
@@ -83,6 +106,7 @@ static void registercommands()
     dbgcmdnew("add", cbInstrAdd, false);
     dbgcmdnew("sub", cbInstrSub, false);
     dbgcmdnew("mul", cbInstrMul, false);
+    dbgcmdnew("mulhi", cbInstrMulhi, false);
     dbgcmdnew("div", cbInstrDiv, false);
     dbgcmdnew("and", cbInstrAnd, false);
     dbgcmdnew("or", cbInstrOr, false);
@@ -97,9 +121,14 @@ static void registercommands()
     dbgcmdnew("sar", cbInstrSar, false);
     dbgcmdnew("push", cbInstrPush, true);
     dbgcmdnew("pop", cbInstrPop, true);
+    dbgcmdnew("popcnt", cbInstrPopcnt, false);
+    dbgcmdnew("lzcnt", cbInstrLzcnt, false);
     dbgcmdnew("test", cbInstrTest, false);
     dbgcmdnew("cmp", cbInstrCmp, false);
     dbgcmdnew("mov,set", cbInstrMov, false); //mov a variable, arg1:dest,arg2:src
+
+    //general purpose (SSE/AVX)
+    dbgcmdnew("movdqu,movups,movupd", cbInstrMovdqu, true); //move from and to XMM register
 
     //debug control
     dbgcmdnew("InitDebug,init,initdbg", cbDebugInit, false); //init debugger arg1:exefile,[arg2:commandline]
@@ -156,6 +185,7 @@ static void registercommands()
     dbgcmdnew("SetBreakpointLogCondition,bplogcondition", cbDebugSetBPXLogCondition, true); //set breakpoint logCondition
     dbgcmdnew("SetBreakpointCommand", cbDebugSetBPXCommand, true); //set breakpoint command on hit
     dbgcmdnew("SetBreakpointCommandCondition", cbDebugSetBPXCommandCondition, true); //set breakpoint commandCondition
+    dbgcmdnew("SetBreakpointLogFile", cbDebugSetBPXLogFile, true); //set breakpoint logFile
     dbgcmdnew("SetBreakpointFastResume", cbDebugSetBPXFastResume, true); //set breakpoint fast resume
     dbgcmdnew("SetBreakpointSingleshoot", cbDebugSetBPXSingleshoot, true); //set breakpoint singleshoot
     dbgcmdnew("SetBreakpointSilent", cbDebugSetBPXSilent, true); //set breakpoint fast resume
@@ -168,6 +198,7 @@ static void registercommands()
     dbgcmdnew("SetHardwareBreakpointLogCondition,bphwlogcondition", cbDebugSetBPXHardwareLogCondition, true); //set breakpoint logText
     dbgcmdnew("SetHardwareBreakpointCommand", cbDebugSetBPXHardwareCommand, true); //set breakpoint command on hit
     dbgcmdnew("SetHardwareBreakpointCommandCondition", cbDebugSetBPXHardwareCommandCondition, true); //set breakpoint commandCondition
+    dbgcmdnew("SetHardwareBreakpointLogFile", cbDebugSetBPXHardwareLogFile, true); //set breakpoint logFile
     dbgcmdnew("SetHardwareBreakpointFastResume", cbDebugSetBPXHardwareFastResume, true); //set breakpoint fast resume
     dbgcmdnew("SetHardwareBreakpointSingleshoot", cbDebugSetBPXHardwareSingleshoot, true); //set breakpoint singleshoot
     dbgcmdnew("SetHardwareBreakpointSilent", cbDebugSetBPXHardwareSilent, true); //set breakpoint fast resume
@@ -180,6 +211,7 @@ static void registercommands()
     dbgcmdnew("SetMemoryBreakpointLogCondition,bpmlogcondition", cbDebugSetBPXMemoryLogCondition, true); //set breakpoint logCondition
     dbgcmdnew("SetMemoryBreakpointCommand", cbDebugSetBPXMemoryCommand, true); //set breakpoint command on hit
     dbgcmdnew("SetMemoryBreakpointCommandCondition", cbDebugSetBPXMemoryCommandCondition, true); //set breakpoint commandCondition
+    dbgcmdnew("SetMemoryBreakpointLogFile", cbDebugSetBPXMemoryLogFile, true); //set breakpoint logFile
     dbgcmdnew("SetMemoryBreakpointFastResume", cbDebugSetBPXMemoryFastResume, true); //set breakpoint fast resume
     dbgcmdnew("SetMemoryBreakpointSingleshoot", cbDebugSetBPXMemorySingleshoot, true); //set breakpoint singleshoot
     dbgcmdnew("SetMemoryBreakpointSilent", cbDebugSetBPXMemorySilent, true); //set breakpoint fast resume
@@ -192,6 +224,7 @@ static void registercommands()
     dbgcmdnew("SetLibrarianBreakpointLogCondition", cbDebugSetBPXDLLLogCondition, true); //set breakpoint logCondition
     dbgcmdnew("SetLibrarianBreakpointCommand", cbDebugSetBPXDLLCommand, true); //set breakpoint command on hit
     dbgcmdnew("SetLibrarianBreakpointCommandCondition", cbDebugSetBPXDLLCommandCondition, true); //set breakpoint commandCondition
+    dbgcmdnew("SetLibrarianBreakpointLogFile", cbDebugSetBPXDLLLogFile, true); //set breakpoint logFile
     dbgcmdnew("SetLibrarianBreakpointFastResume", cbDebugSetBPXDLLFastResume, true); //set breakpoint fast resume
     dbgcmdnew("SetLibrarianBreakpointSingleshoot", cbDebugSetBPXDLLSingleshoot, true); //set breakpoint singleshoot
     dbgcmdnew("SetLibrarianBreakpointSilent", cbDebugSetBPXDLLSilent, true); //set breakpoint fast resume
@@ -204,6 +237,7 @@ static void registercommands()
     dbgcmdnew("SetExceptionBreakpointLogCondition", cbDebugSetBPXExceptionLogCondition, true); //set breakpoint logCondition
     dbgcmdnew("SetExceptionBreakpointCommand", cbDebugSetBPXExceptionCommand, true); //set breakpoint command on hit
     dbgcmdnew("SetExceptionBreakpointCommandCondition", cbDebugSetBPXExceptionCommandCondition, true); //set breakpoint commandCondition
+    dbgcmdnew("SetExceptionBreakpointLogFile", cbDebugSetBPXExceptionLogFile, true); //set breakpoint logFile
     dbgcmdnew("SetExceptionBreakpointFastResume", cbDebugSetBPXExceptionFastResume, true); //set breakpoint fast resume
     dbgcmdnew("SetExceptionBreakpointSingleshoot", cbDebugSetBPXExceptionSingleshoot, true); //set breakpoint singleshoot
     dbgcmdnew("SetExceptionBreakpointSilent", cbDebugSetBPXExceptionSilent, true); //set breakpoint fast resume
@@ -366,7 +400,7 @@ static void registercommands()
     dbgcmdnew("AddArg", cbInstrAddArg, false); //AddArg
     dbgcmdnew("AppendArg", cbInstrAppendArg, false); //AppendArg
     dbgcmdnew("SizeofType", cbInstrSizeofType, false); //SizeofType
-    dbgcmdnew("VisitType", cbInstrVisitType, false); //VisitType
+    dbgcmdnew("VisitType,DisplayType,dt", cbInstrVisitType, false); //VisitType
     dbgcmdnew("ClearTypes", cbInstrClearTypes, false); //ClearTypes
     dbgcmdnew("RemoveType", cbInstrRemoveType, false); //RemoveType
     dbgcmdnew("EnumTypes", cbInstrEnumTypes, false); //EnumTypes
@@ -389,6 +423,7 @@ static void registercommands()
     dbgcmdnew("scriptcmd", cbScriptCmd, false); // execute a script command TODO: undocumented
 
     //gui
+    dbgcmdnew("showthreadid", cbShowThreadId, false); // show given thread in threads
     dbgcmdnew("disasm,dis,d", cbDebugDisasm, true); //doDisasm
     dbgcmdnew("dump", cbDebugDump, true); //dump at address
     dbgcmdnew("sdump", cbDebugStackDump, true); //dump at stack address
@@ -403,6 +438,9 @@ static void registercommands()
     dbgcmdnew("EnableLog,LogEnable", cbInstrEnableLog, false); //enable log
     dbgcmdnew("DisableLog,LogDisable", cbInstrDisableLog, false); //disable log
     dbgcmdnew("ClearLog,cls,lc,lclr", cbClearLog, false); //clear the log
+    dbgcmdnew("SaveLog,LogSave", cbSaveLog, false); //save the log
+    dbgcmdnew("RedirectLog,LogRedirect", cbRedirectLog, false); //redirect the log
+    dbgcmdnew("StopRedirectLog,LogRedirectStop", cbStopRedirectLog, false); //stop redirecting the log
     dbgcmdnew("AddFavouriteTool", cbInstrAddFavTool, false); //add favourite tool
     dbgcmdnew("AddFavouriteCommand", cbInstrAddFavCmd, false); //add favourite command
     dbgcmdnew("AddFavouriteToolShortcut,SetFavouriteToolShortcut", cbInstrSetFavToolShortcut, false); //set favourite tool shortcut
@@ -670,8 +708,6 @@ extern "C" DLL_EXPORT const char* _dbg_dbginit()
     dputs(QT_TRANSLATE_NOOP("DBG", "Setting JSON memory management functions..."));
     json_set_alloc_funcs(json_malloc, json_free);
     //#endif //ENABLE_MEM_TRACE
-    dputs(QT_TRANSLATE_NOOP("DBG", "Initializing Zydis..."));
-    Zydis::GlobalInitialize();
     dputs(QT_TRANSLATE_NOOP("DBG", "Getting directory information..."));
 
     strcpy_s(scriptDllDir, szUserDir);
@@ -723,7 +759,6 @@ extern "C" DLL_EXPORT const char* _dbg_dbginit()
         }
     }
     dprintf(QT_TRANSLATE_NOOP("DBG", "Symbol Path: %s\n"), szSymbolCachePath);
-    SetCurrentDirectoryW(StringUtils::Utf8ToUtf16(szProgramDir).c_str());
     dputs(QT_TRANSLATE_NOOP("DBG", "Allocating message stack..."));
     gMsgStack = MsgAllocStack();
     if(!gMsgStack)
@@ -737,9 +772,8 @@ extern "C" DLL_EXPORT const char* _dbg_dbginit()
     dputs(QT_TRANSLATE_NOOP("DBG", "Registering expression functions..."));
     FormatFunctions::Init();
     dputs(QT_TRANSLATE_NOOP("DBG", "Registering format functions..."));
-    SCRIPTTYPEINFO info;
+    SCRIPTTYPEINFO info = {};
     strcpy_s(info.name, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Default")));
-    info.id = 0;
     info.execute = [](const char* cmd)
     {
         if(!DbgCmdExec(cmd))
@@ -747,7 +781,6 @@ extern "C" DLL_EXPORT const char* _dbg_dbginit()
         GuiFlushLog();
         return true;
     };
-    info.completeCommand = nullptr;
     GuiRegisterScriptLanguage(&info);
     dputs(QT_TRANSLATE_NOOP("DBG", "Registering Script DLL command handler..."));
     strcpy_s(info.name, GuiTranslateText(QT_TRANSLATE_NOOP("DBG", "Script DLL")));
@@ -805,7 +838,6 @@ extern "C" DLL_EXPORT void _dbg_dbgexitsignal()
     dputs(QT_TRANSLATE_NOOP("DBG", "Cleaning up allocated data..."));
     cmdfree();
     varfree();
-    Zydis::GlobalFinalize();
     dputs(QT_TRANSLATE_NOOP("DBG", "Cleaning up wait objects..."));
     waitdeinitialize();
     SafeDbghelpDeinitialize();
